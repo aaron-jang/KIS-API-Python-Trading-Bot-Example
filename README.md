@@ -28,7 +28,7 @@
 ✔️ Telegram Bot Token 및 Chat ID
 
 📌 **2. 패키지 설치**
-```bash
+
 pip install requests pandas_market_calendars python-telegram-bot pytz yfinance python-dotenv pillow
 
 📌 3. 환경 변수 설정 (.env 파일 생성)
@@ -128,3 +128,5 @@ python main_ver15.py
 
 📌 V14.0 [2026.03.04]
 ▫️ V14 기반 신규 아키텍처 구축
+
+```bash
