@@ -53,7 +53,7 @@ class TelegramController:
         elif market_close <= now < after_end: return "AFTER", "🌙 애프터마켓"
         else: return "CLOSE", "⛔ 장마감"
 
-    # [V14 공통] 종목별 독립 시드에 따른 예산 할당
+    # 🚀 [V16.12] 스마트 예산 패스: 리버스 종목은 공용 파이(예산)를 뺏지 않고 양보합니다.
     def _calculate_budget_allocation(self, cash, tickers):
         sorted_tickers = sorted(tickers, key=lambda x: 0 if x == "SOXL" else (1 if x == "TQQQ" else 2))
         allocated = {}
@@ -61,14 +61,25 @@ class TelegramController:
         rem_cash = cash
         
         for tx in sorted_tickers:
-            split = self.cfg.get_split_count(tx)
-            portion = self.cfg.get_seed(tx) / split if split > 0 else 0
+            # 현재 종목이 리버스 모드인지 확인
+            rev_state = self.cfg.get_reverse_state(tx)
+            is_rev = rev_state.get("is_active", False)
+            
+            if is_rev:
+                # 리버스 모드 당사자는 에스크로를 쓰거나 의무매도를 하므로 1회분 공용 예산을 선점하지 않음 (0원 예약)
+                portion = 0.0
+            else:
+                split = self.cfg.get_split_count(tx)
+                portion = self.cfg.get_seed(tx) / split if split > 0 else 0
+                
             if rem_cash >= portion:
                 allocated[tx] = rem_cash
                 rem_cash -= portion
             else: 
                 allocated[tx] = 0
-                force_turbo_off = True 
+                if not is_rev: # 일반 모드인데 돈이 부족할 때만 터보 OFF
+                    force_turbo_off = True 
+                    
         return sorted_tickers, allocated, force_turbo_off
 
     # 텔레그램 시작 명령어(/start) 처리
