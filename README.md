@@ -42,12 +42,12 @@ pip3 install "python-telegram-bot[job-queue]"
 📌 3. 환경 변수 설정 (.env 파일 생성)
 프로젝트 최상단 폴더에 .env 파일을 만들고 아래 양식에 맞게 본인의 키를 입력합니다.
 
-TELEGRAM_TOKEN=나의_텔레그램_봇_토큰. 
-ADMIN_CHAT_ID=나의_텔레그램_채팅방_ID숫자. 
-APP_KEY=나의_한국투자증권_APP_KEY. 
-APP_SECRET=나의_한국투자증권_APP_SECRET. 
-CANO=나의_계좌번호_앞8자리. 
-ACNT_PRDT_CD=01 또는 22. 
+TELEGRAM_TOKEN=나의_텔레그램_봇_토큰  
+ADMIN_CHAT_ID=나의_텔레그램_채팅방_ID숫자  
+APP_KEY=나의_한국투자증권_APP_KEY  
+APP_SECRET=나의_한국투자증권_APP_SECRET  
+CANO=나의_계좌번호_앞8자리  
+ACNT_PRDT_CD=01 또는 22  
 
 📌 4. 프로그램 실행
 
