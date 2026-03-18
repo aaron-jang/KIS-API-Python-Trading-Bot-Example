@@ -62,11 +62,8 @@ class InfiniteStrategy:
             if ma_5day > 0: star_price = round(ma_5day, 2)
             else: star_price = round(avg_price, 2)
 
-            # 🌟 [V17.7 패치] 사각지대 2 완벽 해결: 순수 에스크로(가상장부) 기반 예산 편성
             escrow_cash = self.cfg.get_escrow_cash(ticker)
             one_portion_amt = (escrow_cash / 4.0) if escrow_cash > 0 else 0.0
-            
-            # (V17.7 패치: 장중 리버스 해제 로직 제거 -> 아침 08:30 정산시간으로 이관)
         else:
             star_price = self._ceil(avg_price * (1 + star_ratio)) if avg_price > 0 else 0
             
@@ -129,7 +126,6 @@ class InfiniteStrategy:
                             capped_jup_price = min(raw_jup_price, buy_price - 0.01)
                             jup_price = round(capped_jup_price, 2)
                             if jup_price > 0:
-                                # 🌟 [V17.7 패치] 보너스 줍줍은 2차 전송용으로 분리
                                 bonus_orders.append({"side": "BUY", "price": jup_price, "qty": 1, "type": "LOC", "desc": f"🧹리버스줍줍({i})" })
                 
                 if market_type == "REG":
@@ -145,11 +141,15 @@ class InfiniteStrategy:
 
             can_buy = not is_money_short and not is_last_lap
             is_turbo_active = False if force_turbo_off else self.cfg.get_turbo_mode()
-                
+            
+            # 🌟 [V17.8 패치] 자전거래 원천 차단: 평단가와 별값 중 낮은 가격을 절대 상한선(Safe Ceiling)으로 설정
+            safe_ceiling = min(avg_price, star_price) if star_price > 0 else avg_price
+
             if is_turbo_active and not is_last_lap:
                 if is_simulation or real_available_cash >= one_portion_amt:
                     ref_price = min(avg_price, prev_close)
-                    turbo_price = round(self._ceil(ref_price * 0.95) - 0.01, 2)
+                    raw_turbo = self._ceil(ref_price * 0.95) - 0.01
+                    turbo_price = round(min(raw_turbo, safe_ceiling - 0.01), 2)
                     turbo_qty = math.floor(one_portion_amt / turbo_price) if turbo_price > 0 else 0
                     if turbo_qty > 0:
                         core_orders.append({"side": "BUY", "price": turbo_price, "qty": turbo_qty, "type": "LOC", "desc": "🏎️가속매수"})
@@ -158,7 +158,8 @@ class InfiniteStrategy:
             N = math.floor(one_portion_amt / avg_price) if avg_price > 0 else 0
             
             if can_buy:
-                p_avg = round(self._ceil(avg_price) - 0.01, 2)
+                # 🌟 [V17.8 패치] 평단 매수도 절대 상한선을 넘지 못하게 제한
+                p_avg = round(min(self._ceil(avg_price) - 0.01, safe_ceiling - 0.01), 2)
                 p_star = round(star_price - 0.01, 2)
 
                 if t_val < (split / 2):
@@ -188,10 +189,10 @@ class InfiniteStrategy:
                 for i in range(1, 6):
                     target_qty = base_qty_for_jupjup + i 
                     raw_jup_price = self._floor(one_portion_amt / target_qty)
-                    capped_jup_price = min(raw_jup_price, avg_price - 0.01)
+                    # 🌟 [V17.8 패치] 줍줍 가격도 절대 상한선을 넘지 못하게 제한
+                    capped_jup_price = min(raw_jup_price, safe_ceiling - 0.01)
                     jup_price = round(capped_jup_price, 2)
                     if jup_price > 0:
-                        # 🌟 [V17.7 패치] 보너스 줍줍은 2차 전송용으로 분리
                         bonus_orders.append({"side": "BUY", "price": jup_price, "qty": 1, "type": "LOC", "desc": f"🧹줍줍({i})" })
 
             q_qty = math.ceil(qty / 4)

@@ -14,5 +14,6 @@ VERSION_HISTORY = [
     "V17.4 [2026.03.18] 방탄 아키텍처 4대 리스크 완벽 제거: JSON 동시접근 Lock 차단, YFinance 봇 멈춤 방어(KIS API 우회), 체결 실패 시 Lock 방지, 제네시스 평단가 결벽증 완화 (수정: main, broker, strategy, config, telegram_bot)",
     "V17.5 [2026.03.18] 텔레그램 UI/UX 묵언수행 버그 픽스: 목표/복리율 입력 시 응답 누락(await) 해결 및 입력 프롬프트 한글화 적용 (수정: telegram_bot)",
     "V17.6 [2026.03.18] 야후/한투 API 이중화 및 비동기 블로킹 방어 전면 확대 적용: 현재가 및 전일종가 호출 시 KIS API(HHDFS76200200) Fallback 추가 및 asyncio.to_thread 처리 (수정: broker, main, telegram_bot)",
-    "V17.7 [2026.03.18] 다중 종목 마진 스틸링 완벽 차단 및 에스크로 고도화: 1/2차 Two-Phase 교차 전송 분리 라우팅 도입, 리버스 종목의 순수 가상 장부 예산제 격리 및 장중 해제(Daily Lock) 방어 적용 (수정: main, telegram_bot, strategy)"
+    "V17.7 [2026.03.18] 다중 종목 마진 스틸링 완벽 차단 및 에스크로 고도화: 1/2차 Two-Phase 교차 전송 분리 라우팅 도입, 리버스 종목의 순수 가상 장부 예산제 격리 및 장중 해제(Daily Lock) 방어 적용 (수정: main, telegram_bot, strategy)",
+    "V17.8 [2026.03.18] 자전거래(Wash Trade) 원천 차단: 후반전 별값(매도) 하락 시 매수/매도 가격 역전으로 인한 증권사 주문 거절 문제 해결을 위해 모든 매수 주문에 절대 안전 상한선(Safe Ceiling, min(평단가, 별값)) 도입 (수정: strategy)"
 ]
