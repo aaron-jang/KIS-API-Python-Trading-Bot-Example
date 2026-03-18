@@ -468,8 +468,8 @@ class TelegramController:
 
     async def cmd_version(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_admin(update): return
-        history_data = self.cfg.get_version_history()
-        msg, markup = self.view.get_version_message(history_data, show_all=False)
+        history_data = self.cfg.get_full_version_history()
+        msg, markup = self.view.get_version_message(history_data, page_index=None)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode='HTML')
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -479,13 +479,13 @@ class TelegramController:
         action, sub = data[0], data[1] if len(data) > 1 else ""
 
         if action == "VERSION":
-            if sub == "ALL":
-                history_data = self.cfg.get_full_version_history()
-                msg, markup = self.view.get_version_message(history_data, show_all=True)
+            history_data = self.cfg.get_full_version_history()
+            if sub == "LATEST":
+                msg, markup = self.view.get_version_message(history_data, page_index=None)
                 await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
-            elif sub == "LATEST":
-                history_data = self.cfg.get_version_history()
-                msg, markup = self.view.get_version_message(history_data, show_all=False)
+            elif sub == "PAGE":
+                page_idx = int(data[2])
+                msg, markup = self.view.get_version_message(history_data, page_index=page_idx)
                 await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
 
         elif action == "RESET":

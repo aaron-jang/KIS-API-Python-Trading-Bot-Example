@@ -60,11 +60,33 @@ class TelegramView:
         ]
         return msg, InlineKeyboardMarkup(keyboard)
 
-    def get_version_message(self, history_data, show_all=False):
-        title = "📚 <b>[ 전체 버전 및 업데이트 명예의 전당 ]</b>\n\n" if show_all else "🛠️ <b>[ 최신 버전 및 업데이트 내역 ]</b>\n\n"
-        msg = title
-        
+    def get_version_message(self, history_data, page_index=None):
+        groups = {}
         for h in history_data:
+            ver_str = h if isinstance(h, str) else h.get('version', '')
+            major_ver = ver_str.split('.')[0] if '.' in ver_str else ver_str.split(' ')[0]
+            if major_ver not in groups:
+                groups[major_ver] = []
+            groups[major_ver].append(h)
+            
+        major_versions = list(groups.keys())
+        major_versions.reverse() 
+
+        if not major_versions:
+            return "📭 기록된 버전 히스토리가 없습니다.", None
+
+        if page_index is None:
+            current_major = major_versions[0]
+            items = groups.get(current_major, [])
+            title = f"🛠️ <b>[ 최신 버전({current_major}) 업데이트 내역 ]</b>\n\n"
+        else:
+            page_index = max(0, min(page_index, len(major_versions) - 1))
+            current_major = major_versions[page_index]
+            items = groups.get(current_major, [])
+            title = f"📚 <b>[ 과거 버전({current_major}) 명예의 전당 ]</b>\n\n"
+
+        msg = title
+        for h in items:
             if isinstance(h, str):
                 parts = h.split(' ', 2)
                 if len(parts) >= 3:
@@ -78,11 +100,23 @@ class TelegramView:
                 msg += f"📌 <b>{h.get('version', '')}</b> ({h.get('date', '')})\n▫️ {h.get('summary', '')}\n\n"
         
         msg = msg.strip()
-        
         keyboard = []
-        if not show_all:
-            keyboard.append([InlineKeyboardButton("📜 과거 버전 명예의 전당 보기", callback_data="VERSION:ALL")])
+        
+        if page_index is None:
+            if len(major_versions) > 1:
+                keyboard.append([InlineKeyboardButton(f"📜 과거 버전 명예의 전당 보기 ({major_versions[1]})", callback_data="VERSION:PAGE:1")])
         else:
+            nav_row = []
+            if page_index < len(major_versions) - 1:
+                prev_major = major_versions[page_index + 1]
+                nav_row.append(InlineKeyboardButton(f"◀️ 이전 ({prev_major})", callback_data=f"VERSION:PAGE:{page_index + 1}"))
+            if page_index > 0:
+                next_major = major_versions[page_index - 1]
+                nav_row.append(InlineKeyboardButton(f"다음 ({next_major}) ▶️", callback_data=f"VERSION:PAGE:{page_index - 1}"))
+            
+            if nav_row:
+                keyboard.append(nav_row)
+            
             keyboard.append([InlineKeyboardButton("⬆️ 접기 (최신 버전만 보기)", callback_data="VERSION:LATEST")])
             
         return msg, InlineKeyboardMarkup(keyboard)
@@ -161,11 +195,9 @@ class TelegramView:
                 n_orders = [o for o in t_info['plan']['orders'] if "줍줍" not in o['desc']]
 
                 for o in n_orders:
-                    # 기본 컬러 지정
                     ico = "🔴" if o['side'] == 'BUY' else "🔵"
                     desc = o['desc']
                     
-                    # 특수 주문일 경우 이모지 교체 및 중복 이모지 제거
                     if "수혈" in desc: 
                         ico = "🩸"
                         desc = desc.replace("🩸", "")
@@ -173,7 +205,6 @@ class TelegramView:
                         ico = "🦇"
                         desc = desc.replace("🦇", "")
                         
-                    # LIMIT(지정가)일 경우 빈칸 없이 깔끔하게 처리, LOC 등은 표시
                     type_str = "" if o['type'] == 'LIMIT' else f"({o['type']})"
                     type_disp = f" {type_str}" if type_str else ""
                     
