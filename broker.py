@@ -475,9 +475,18 @@ class KoreaInvestmentBroker:
             stock = yf.Ticker(ticker)
             splits = stock.splits
             if splits is not None and not splits.empty:
+                
+                # 🛡️ 긴급 핫픽스: 기록이 아예 없을 경우 10년 전이 아니라 '최근 7일'로 기준을 강제 설정
+                if last_date_str == "":
+                    est = pytz.timezone('US/Eastern')
+                    seven_days_ago = datetime.datetime.now(est) - datetime.timedelta(days=7)
+                    safe_last_date = seven_days_ago.strftime('%Y-%m-%d')
+                else:
+                    safe_last_date = last_date_str
+                    
                 for split_date_dt, ratio in splits.items():
                     split_date = split_date_dt.strftime('%Y-%m-%d')
-                    if last_date_str == "" or split_date > last_date_str:
+                    if split_date > safe_last_date:
                         return float(ratio), split_date
         except Exception as e:
             print(f"⚠️ [야후 파이낸스] 액면분할 조회 에러: {e}")
