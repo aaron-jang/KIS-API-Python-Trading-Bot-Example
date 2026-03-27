@@ -311,7 +311,7 @@ async def scheduled_sniper_monitor(context):
     chat_id = context.job.chat_id
     
     target_cache = app_data.setdefault('dynamic_targets', {})
-    tracking_cache = app_data.setdefault('sniper_tracking', {}) # 💡 능동형 추적 스나이퍼 메모리
+    tracking_cache = app_data.setdefault('sniper_tracking', {})
     
     today_est_str = now_est.strftime('%Y%m%d')
     if target_cache.get('date') != today_est_str:
@@ -357,6 +357,7 @@ async def scheduled_sniper_monitor(context):
                     else:
                         target_cache[t] = {'value': (9.0 if t=="SOXL" else 5.0), 'weight': current_weight}
 
+                # 💡 [V21.7 패치] 동적 패닉장 2.0% 타점 변환 로직 연동
                 sniper_pct = target_cache[t]['value']
                 raw_target_price = prev_c * (1 - (sniper_pct / 100.0))
                 target_buy_price = math.floor(raw_target_price * 100) / 100.0
@@ -366,14 +367,15 @@ async def scheduled_sniper_monitor(context):
                 tracking_info = tracking_cache.setdefault(t, {'is_tracking': False, 'lowest_price': float('inf'), 'alerted': False})
                 
                 # =========================================================================
-                # 1. 능동형 추적 하방 스나이퍼 매수 (Active Tracking Intercept)
+                # 1. 능동형 추적 하방 스나이퍼 매수 (Active Tracking Intercept - 거래량 하이브리드)
                 # =========================================================================
                 if not lock_buy and is_sniper_armed and target_buy_price > 0:
-                    # 💡 5분봉 데이터 획득 (broker.py 수술 시 구현될 메서드)
+                    # 💡 5분봉 데이터 획득 (거래량 및 Vol_MA20 포함된 신형 엔진)
                     candle = await asyncio.to_thread(broker.get_current_5min_candle, t)
                     
                     if candle:
                         c_open, c_high, c_low, c_close = candle['open'], candle['high'], candle['low'], candle['close']
+                        c_vol, c_vol_ma20 = candle['volume'], candle['vol_ma20']
                         
                         # 1단계: 방어선 하향 돌파 시 추적 모드 가동
                         if not tracking_info['is_tracking'] and c_low <= target_buy_price:
@@ -383,11 +385,11 @@ async def scheduled_sniper_monitor(context):
                             if not tracking_info['alerted']:
                                 msg = f"🎯 <b>[{t}] 능동형 스나이퍼 추적 모드 가동!</b>\n"
                                 msg += f"📉 <b>방어선(${target_buy_price:.2f}) 하향 돌파 감지</b>\n"
-                                msg += f"👀 섣불리 줍지 않고 진짜 바닥을 다질 때까지 인내하며 발목을 노립니다."
+                                msg += f"👀 섣불리 줍지 않고 진짜 바닥(거래량 급증)을 다질 때까지 발목을 노립니다."
                                 await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
                                 tracking_info['alerted'] = True
                         
-                        # 2단계: 바닥 갱신 및 3단계: 양봉 반등 확인 사살
+                        # 2단계: 바닥 갱신 및 3단계: 양봉 반등 + 거래량 하이브리드 필터 확인 사살
                         if tracking_info['is_tracking']:
                             if c_low < tracking_info['lowest_price']:
                                 tracking_info['lowest_price'] = c_low
@@ -397,7 +399,10 @@ async def scheduled_sniper_monitor(context):
                             rebound_pct = (c_high - tracking_info['lowest_price']) / tracking_info['lowest_price'] * 100
                             is_rebounded = rebound_pct >= trigger_pct
                             
-                            if is_yangbong and is_rebounded:
+                            # 💡 [승승장군 핵심 수술] 5분봉 거래량이 최근 100분 평균 거래량(Vol_MA20)을 돌파했는지 확인 (데드캣 बा운스 차단)
+                            is_volume_spike = c_vol > c_vol_ma20
+                            
+                            if is_yangbong and is_rebounded and is_volume_spike:
                                 if cfg.get_secret_mode():
                                     is_rev = cfg.get_reverse_state(t).get("is_active", False)
                                     if is_rev: sniper_budget = cfg.get_escrow_cash(t) / 4.0
@@ -450,9 +455,10 @@ async def scheduled_sniper_monitor(context):
                                         
                                         if hunt_success:
                                             cfg.set_lock(t, "SNIPER_BUY") 
-                                            msg = f"💥 <b>[{t}] 능동형 추적 스나이퍼 발목 낚아채기 명중!</b>\n"
+                                            msg = f"💥 <b>[{t}] 하이브리드 추적 스나이퍼 명중!</b>\n"
                                             msg += f"📉 <b>최저점: ${tracking_info['lowest_price']:.2f}</b>\n"
                                             msg += f"📈 <b>반등 양봉 포착 (+{trigger_pct}% 돌파)</b>\n"
+                                            msg += f"🔥 <b>기관 매수세(거래량 급증) 감지 (현재 {c_vol:,.0f} > MA20 {c_vol_ma20:,.0f})</b>\n"
                                             msg += f"🎯 <b>상한선(${target_buy_price:.2f}) 방어막 내에서 최적 단가 ${actual_buy_price:.2f}에 즉시 체결을 완료</b>했습니다!\n"
                                             msg += "🔫 당일 하방(매수) 스나이퍼 활동만을 종료하며, 상방(익절) 감시는 계속됩니다."
                                             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
