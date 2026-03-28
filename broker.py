@@ -575,108 +575,33 @@ class KoreaInvestmentBroker:
         return 0.0, ""
 
     def get_dynamic_sniper_target(self, index_ticker, weight=1.0):
+        """
+        [V22.02] 순수 절대 상수 (20년치 평균 역사적 진폭) 기반 스나이퍼 타점 산출
+        가변적인 ATR 연산 및 패닉장 갭 필터를 완전히 도려내고, 역사적으로 증명된 고정값만 사용합니다.
+        """
         try:
-            df = yf.download(index_ticker, period='1mo', interval='5m', prepost=True, progress=False)
-            if df.empty: 
-                return None
+            # 💡 [핵심 수술] 20년치 백테스트 기반 절대 진폭 상수 (1배수 기준)
+            FIXED_AMP_SOXX = 7.59
+            FIXED_AMP_QQQ = 6.18
             
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.droplevel(1)
-                
-            df.index = df.index.tz_convert('America/New_York')
+            base_amp = FIXED_AMP_SOXX if index_ticker == "SOXX" else FIXED_AMP_QQQ
             
-            df_full = df.between_time('04:00', '19:59')
-            df_reg = df.between_time('09:30', '16:00')
-            
-            daily_data = []
-            for date, group in df_full.groupby(df_full.index.date):
-                if group.empty: continue
-                
-                reg_group = df_reg[df_reg.index.date == date]
-                if not reg_group.empty:
-                    high_val = reg_group['High'].max()
-                    low_val = reg_group['Low'].min()
-                else:
-                    high_val = group['High'].max()
-                    low_val = group['Low'].min()
-                    
-                daily_data.append({
-                    'Date': pd.to_datetime(date).date(),
-                    'High': high_val,
-                    'Low': low_val,
-                    'Close': group['Close'].iloc[-1] 
-                })
-            daily_df = pd.DataFrame(daily_data).set_index('Date')
-            
-            now_est = datetime.datetime.now(pytz.timezone('America/New_York'))
-            
-            if now_est.time() >= datetime.time(20, 0):
-                last_completed_date = now_est.date()
-                target_trading_date = now_est.date() + datetime.timedelta(days=1)
-            else:
-                last_completed_date = now_est.date() - datetime.timedelta(days=1)
-                target_trading_date = now_est.date()
-            
-            if len(daily_df) < 15: 
-                return None 
-            
-            past_df = daily_df[daily_df.index <= last_completed_date]
-            if past_df.empty or len(past_df) < 15:
-                last_atr_5 = 0
-                last_atr_14 = 0
-                last_close_past = daily_df['Close'].iloc[-2] if len(daily_df) > 1 else daily_df['Close'].iloc[-1]
-            else:
-                past_tr = pd.concat([
-                    past_df['High'] - past_df['Low'],
-                    abs(past_df['High'] - past_df['Close'].shift(1)),
-                    abs(past_df['Low'] - past_df['Close'].shift(1))
-                ], axis=1).max(axis=1)
-                
-                last_atr_5 = past_tr.rolling(5).mean().iloc[-1]
-                last_atr_14 = past_tr.rolling(14).mean().iloc[-1]
-                last_close_past = past_df['Close'].iloc[-1] 
-            
-            today_df = daily_df[daily_df.index == target_trading_date]
-            gap_pct = 0.0
-            is_panic = False
-            
-            if not today_df.empty and last_close_past > 0:
-                current_price = today_df['Close'].iloc[-1]
-                gap_pct = ((current_price - last_close_past) / last_close_past) * 100
-                
-                # 💡 [패닉장 임계값 분리 로직 적용]
-                panic_threshold = -1.0
-                if index_ticker == "QQQ":
-                    panic_threshold = -1.0  # TQQQ(QQQ) 전용 패닉장 하한선 (원할 경우 -0.75 등으로 조정 가능)
-                elif index_ticker == "SOXX":
-                    panic_threshold = -1.0  # SOXL(SOXX) 전용 패닉장 하한선
-                
-                if gap_pct <= panic_threshold:
-                    is_panic = True
-            
-            exp_5d = (last_atr_5 / last_close_past) * 100 * 3 if last_close_past > 0 else 0
-            exp_14d = (last_atr_14 / last_close_past) * 100 * 3 if last_close_past > 0 else 0
-            
-            hybrid = max(exp_5d, exp_14d * 0.8)
-            
-            # 💡 [승승장군 핵심 수술] 패닉장 감지 시 15.0% 개방, 일반장 10.0% 상한선 방어막 적용
-            final_target = hybrid * weight
-            if is_panic:
-                final_target = min(final_target, 15.0)
-            else:
-                final_target = min(final_target, 10.0) 
+            # 사용자가 설정한 가중치(weight) 적용
+            final_target = base_amp * weight
             
             class TargetFloat(float):
                 pass
             
             ret = TargetFloat(round(final_target, 2))
-            ret.is_panic = is_panic
-            ret.gap_pct = round(gap_pct * 3, 2) 
+            
+            # [V22.02] 패닉장 등 불필요한 노이즈 속성 제거 및 기본값 세팅
+            ret.is_panic = False
+            ret.gap_pct = 0.0 
             
             return ret
             
         except Exception as e:
-            print(f"⚠️ [Broker] 동적 스나이퍼 타점 계산 실패 ({index_ticker}): {e}")
+            print(f"⚠️ [Broker] 절대 상수 스나이퍼 타점 반환 실패 ({index_ticker}): {e}")
             return None
 
     def get_day_high_low(self, ticker):
