@@ -717,8 +717,7 @@ async def scheduled_regular_trade(context):
     await context.bot.send_message(
         chat_id=chat_id, 
         text=f"🌃 <b>[{target_hour}:05] 앱솔루트 퀀트 시스템 {latest_version} 통합 주문 장전!</b>\n"
-             f"🛡️ <b>[V3.0 패치] 프리마켓 감시 생략. 즉각 스나이퍼 & 방어 매수를 동시 장전합니다.</b>\n"
-             f"서버 접속 부하(동시접속) 방지를 위해 <b>{jitter_seconds}초</b> 대기 후 안전하게 주문 전송을 시작합니다.", 
+             f"🛡️ 서버 접속 부하(동시접속) 방지를 위해 <b>{jitter_seconds}초</b> 대기 후 안전하게 주문 전송을 시작합니다.", 
         parse_mode='HTML'
     )
 
@@ -808,7 +807,7 @@ async def scheduled_regular_trade(context):
                 await context.bot.send_message(chat_id=chat_id, text=f"⚠️ <b>[API 통신 지연 감지 - {attempt}/{MAX_RETRIES}회]</b>\n한투 서버 불안정으로 계좌 조회 실패. 1분 뒤 끈질기게 다시 진입합니다! 🛡️", parse_mode='HTML')
             await asyncio.sleep(RETRY_DELAY)
 
-    await context.bot.send_message(chat_id=chat_id, text="🚨 <b>[긴급 에러] 최대 15회(15분) 재시도에도 불구하고 KIS API 통신 복구에 실패하여, 금일 정규장 주문을 최종 취소합니다. 수동 점검이 필요합니다!</b>", parse_mode='HTML')
+    await context.bot.send_message(chat_id=chat_id, text="🚨 <b>[긴급 에러] 최대 15회(15분) 재시도에도 불구하고 KIS API 통신 복구에 실패하여, 금일 정규장 주문을 최종 취소합니다. 수동 점검이 매뉴얼합니다!</b>", parse_mode='HTML')
 
 async def scheduled_auto_sync_summer(context):
     if not is_dst_active(): return 
