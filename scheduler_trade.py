@@ -417,13 +417,13 @@ async def scheduled_sniper_monitor(context):
                 is_rev = cfg.get_reverse_state(t).get("is_active", False)
                 sell_divisor = 10 if split <= 20 else 20
                 
-                safe_floor_price = math.ceil(avg_price * 1.005 * 100) / 100.0
-                
+                # 💡 [핵심 수술] 리버스 모드 안전 마진(1.005) 전면 배제 및 순수 5MA 우선 락온
                 if is_rev:
                     q_qty = max(4, math.floor(qty / sell_divisor)) if qty >= 4 else qty
                     ma_5day = await asyncio.to_thread(broker.get_5day_ma, t)
-                    base_trigger = round(ma_5day, 2) if ma_5day > 0 else safe_floor_price
+                    base_trigger = round(ma_5day, 2) if ma_5day > 0 else (math.ceil(avg_price * 100) / 100.0)
                 else:
+                    safe_floor_price = math.ceil(avg_price * 1.005 * 100) / 100.0
                     is_first_half = t_val < (split / 2)
                     q_qty = math.ceil(qty / 4)
                     base_trigger = max(star_price, safe_floor_price)
@@ -593,6 +593,7 @@ async def scheduled_sniper_monitor(context):
             app_data['sniper_timeout_ts'] = now_ts
     except Exception as e:
         logging.error(f"🚨 스나이퍼 모니터 에러: {e}")
+
 async def scheduled_vwap_trade(context):
     if not is_market_open(): return
     

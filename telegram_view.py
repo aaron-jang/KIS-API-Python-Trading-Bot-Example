@@ -39,6 +39,47 @@ class TelegramView:
             "<i>┗ 🚨 수동 닻 올리기: 예산 부족으로 리버스 진입 후 외화RP매도 등 예수금을 추가 입금하셨다면, 이 메뉴에서 반드시 '리버스 강제 해제'를 눌러 닻을 올려주세요!</i>"
         )
 
+    # ==========================================================
+    # 💡 [핵심 수술] P매매 (VWAP) 시크릿 모드 전용 UI 파이프라인
+    # ==========================================================
+    def get_p_trade_unlocked_message(self, ticker, seed, multiplier):
+        return (
+            f"🟢 <b>[ P-VWAP Engine Unlocked ]</b>\n"
+            f"접속 시간 검증 완료 (Time Window: Valid)\n"
+            f"입력 기한: 정규장 마감 30분 전(15:30 EST) 락다운\n\n"
+            f"연동 종목: <b>{ticker}</b> (고정)\n"
+            f"연동 시드: <b>${seed:,.0f}</b> (고정)\n"
+            f"자동 할당 배수(n): <b>{multiplier:.2f} 배</b>\n\n"
+            f"명령어 양식: <code>매도/매수 [타겟가] [기본수량]</code> (쉼표/줄바꿈으로 다중 입력)\n"
+            f"입력 예시:\n"
+            f"<code>매도 45.50 10, 매도 46.00 10, 매수 42.00 15, 매수 41.50 20</code>\n\n"
+            f"⚠️ <b>끄기(OFF)</b> : P매매를 소각하려면 <code>OFF</code> 또는 <code>취소</code>를 입력하세요."
+        )
+
+    def get_p_trade_locked_message(self):
+        return (
+            f"⛔ <b>[ P-VWAP Engine Access Denied ]</b>\n"
+            f"현재는 P매매 지시서 입력 허용 시간이 아닙니다.\n\n"
+            f"⏱️ <b>허용 시간:</b> 애프터마켓 종료 후 ~ 정규장 마감 30분 전 (15:30 EST)까지"
+        )
+
+    def get_p_trade_parsed_message(self, multiplier, parsed_list):
+        msg = (
+            f"🎯 <b>[ P-VWAP Multi-Target Lock-on ]</b>\n"
+            f"배수(n) {multiplier:.2f}배 스케일링 및 타격 대기열 장전 완료.\n\n"
+        )
+        for i, item in enumerate(parsed_list):
+            side_str = "SELL" if item['side'] == 'SELL' else "BUY"
+            cond_str = "이상" if item['side'] == 'SELL' else "이하"
+            ico = "🔵" if item['side'] == 'SELL' else "🔴"
+            msg += f"{i+1}. {ico} {side_str} : ${item['target_price']:.2f} {cond_str} / 최종 {item['qty']} 주\n"
+        
+        msg += f"\n상태: 총 {len(parsed_list)}개 슬롯, 15:30 ~ 15:59 U-Curve 타임 슬라이싱 대기열 장전."
+        return msg
+
+    # ==========================================================
+    # 기존 UI 렌더링 파이프라인
+    # ==========================================================
     def get_reset_menu(self, active_tickers):
         msg = (
             "🛠️ <b>[ 시스템 안전 통제실 ]</b>\n"
@@ -119,7 +160,8 @@ class TelegramView:
             keyboard.append([InlineKeyboardButton("⬆️ 접기 (최신 버전만 보기)", callback_data="VERSION:LATEST")])
             
         return msg, InlineKeyboardMarkup(keyboard) if keyboard else None
-    def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active):
+    
+    def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active, p_trade_data=None):
         total_locked = sum(t_info.get('escrow', 0.0) for t_info in ticker_data)
         
         header_msg = f"📜 <b>[ 통합 지시서 ({status_text}) ]</b>\n📅 <b>{dst_text}</b>\n"
@@ -228,10 +270,11 @@ class TelegramView:
                     trigger_price = tracking_info.get('trigger_price', 0.0)
                     body_msg += f"🎯 상방 추적(${trigger_price:.2f}) 중 (고가: ${peak_price:.2f})\n"
                 else:
-                    safe_floor = math.ceil(t_info['avg'] * 1.005 * 100) / 100.0
+                    # 💡 [핵심 수술] 리버스 모드 시 안전마진(safe_floor)을 배제하고 순수 star_price(5MA)만 사용하도록 격리
                     if is_rev:
-                        sn_target = safe_floor
+                        sn_target = t_info['star_price']
                     else:
+                        safe_floor = math.ceil(t_info['avg'] * 1.005 * 100) / 100.0
                         sn_target = max(t_info['star_price'], safe_floor)
                         
                     if sn_target > 0:
@@ -328,6 +371,28 @@ class TelegramView:
             body_msg += "\n"
 
         final_msg = header_msg + body_msg
+
+        # ==========================================================
+        # 💡 [핵심 수술] P매매 (VWAP) 독립 대기열 렌더링 파이프라인
+        # ==========================================================
+        if p_trade_data:
+            has_p_orders = False
+            p_msg = "----------------------------\n"
+            p_msg += "🛡️ <b>[ P-VWAP 단독 대기열 (수동/방치형) ]</b>\n"
+            p_msg += "종목 / 방향 / 타겟가 / 할당수량 / 진행상태\n"
+            
+            for p_ticker, p_orders in p_trade_data.items():
+                if p_orders:
+                    has_p_orders = True
+                    for o in p_orders:
+                        side_str = "BUY" if o['side'] == 'BUY' else "SELL"
+                        ico = "🔴" if side_str == "BUY" else "🔵"
+                        p_msg += f"▫️ {p_ticker} / {ico}{side_str} / ${o['target_price']:.2f} / {o['qty']}주 / ⏳ 15:30 가동\n"
+            
+            if has_p_orders:
+                p_msg += "<i>※ P-VWAP 주문은 15:30 EST부터 1분 단위로 분할 타격되며 미체결분은 장 마감 시 자동 소멸됩니다. (봇의 무매 예산 연동 없음)</i>\n\n"
+                final_msg += p_msg
+
         if not is_trade_active: final_msg += "⛔ 장마감/애프터마켓: 주문 불가"
         return final_msg, InlineKeyboardMarkup(keyboard) if keyboard else None
 
@@ -531,3 +596,4 @@ class TelegramView:
             [InlineKeyboardButton("💎 SOXL + TQQQ 통합", callback_data="TICKER:ALL")]
         ]
         return f"🔄 <b>[ 운용 종목 선택 ]</b>\n현재: <b>{', '.join(current_tickers)}</b>", InlineKeyboardMarkup(keyboard)
+

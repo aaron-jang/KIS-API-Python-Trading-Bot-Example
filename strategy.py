@@ -102,12 +102,11 @@ class InfiniteStrategy:
         star_ratio = target_ratio - (target_ratio * depreciation_factor * t_val)
         
         if is_reverse:
-            safe_floor_price = math.ceil(avg_price * 1.005 * 100) / 100.0
-            
+            # 💡 [핵심 수술] 안전 마진 강제 부과 로직 전면 철거. 오직 5MA만 매도 타겟으로 락온.
             if ma_5day > 0: 
-                star_price = max(round(ma_5day, 2), safe_floor_price)
+                star_price = round(ma_5day, 2)
             else: 
-                star_price = safe_floor_price
+                star_price = self._ceil(avg_price)
 
             ledger = self.cfg.get_ledger()
             total_sell_amount = 0.0

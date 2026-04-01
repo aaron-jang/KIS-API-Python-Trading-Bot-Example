@@ -1,5 +1,5 @@
 # ==========================================================
-# [telegram_bot.py]
+# [telegram_bot.py] - Part 1
 # ⚠️ 이 주석 및 파일명 표기는 절대 지우지 마세요.
 # ==========================================================
 import logging
@@ -58,6 +58,25 @@ class TelegramController:
         elif market_close <= now < after_end: return "AFTER", "🌙 애프터마켓"
         else: return "CLOSE", "⛔ 장마감"
 
+    # ==========================================================
+    # 💡 [핵심 수술] P매매 타임 윈도우 (Time-Lock) 검증 엔진
+    # ==========================================================
+    def _is_p_trade_window_open(self):
+        est = pytz.timezone('US/Eastern')
+        now_est = datetime.datetime.now(est)
+        nyse = mcal.get_calendar('NYSE')
+        schedule = nyse.schedule(start_date=now_est.date(), end_date=now_est.date())
+        
+        if not schedule.empty:
+            market_close = schedule.iloc[0]['market_close'].astimezone(est)
+            vwap_start = market_close - datetime.timedelta(minutes=30)
+            after_end = market_close + datetime.timedelta(hours=4)
+            
+            # 정규장 마감 30분 전 ~ 애프터마켓 종료까지는 락다운 (데드존)
+            if vwap_start <= now_est <= after_end:
+                return False
+        return True
+
     def _calculate_budget_allocation(self, cash, tickers):
         sorted_tickers = sorted(tickers, key=lambda x: 0 if x == "SOXL" else (1 if x == "TQQQ" else 2))
         allocated = {}
@@ -90,9 +109,7 @@ class TelegramController:
 
     async def cmd_v17(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_admin(update): return
-        
-        if os.getenv("SECRET_MODE") != "ON":
-            return 
+        if os.getenv("SECRET_MODE") != "ON": return 
 
         args = context.args
         if not args:
@@ -110,14 +127,36 @@ class TelegramController:
 
     async def cmd_v4(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_admin(update): return
-        
-        if os.getenv("SECRET_MODE") != "ON":
-            return 
+        if os.getenv("SECRET_MODE") != "ON": return 
 
         for t in self.cfg.get_active_tickers():
             self.cfg.set_version(t, "V14")
-            
         await update.message.reply_text("✅ <b>모든 종목이 오리지널 V4(무매4) 모드로 복귀했습니다.</b>", parse_mode='HTML')
+
+    # ==========================================================
+    # 💡 [핵심 수술] P매매 시크릿 진입점 (다크 트리거)
+    # ==========================================================
+    async def cmd_p4006(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self._is_admin(update): return
+        
+        if not self._is_p_trade_window_open():
+            msg = self.view.get_p_trade_locked_message()
+            await update.message.reply_text(msg, parse_mode='HTML')
+            return
+
+        active_tickers = self.cfg.get_active_tickers()
+        if not active_tickers:
+            await update.message.reply_text("❌ 운용 중인 종목이 설정되지 않았습니다.")
+            return
+            
+        target_ticker = active_tickers[0] 
+        seed = self.cfg.get_seed(target_ticker)
+        multiplier = seed / 10000.0
+
+        self.user_states[update.effective_chat.id] = f"P_TRADE_{target_ticker}_{multiplier}"
+        
+        msg = self.view.get_p_trade_unlocked_message(target_ticker, seed, multiplier)
+        await update.message.reply_text(msg, parse_mode='HTML')
 
     async def cmd_sync(self, update, context):
         if not self._is_admin(update): return
@@ -179,9 +218,7 @@ class TelegramController:
                 current_day_high = tracking_status.get('day_high', day_high) 
                 
                 hybrid_target_price = current_day_high * (1 - (abs(dynamic_pct) / 100.0))
-                
                 trigger_reason = f"-{abs(dynamic_pct)}%"
-                
                 is_already_ordered = self.cfg.check_lock(t, "REG") or self.cfg.check_lock(t, "SNIPER")
                 
                 plan = self.strategy.get_plan(
@@ -199,8 +236,9 @@ class TelegramController:
                 secret_quarter_target = 0.0
                 
                 if ver == "V17" and actual_qty > 0:
+                    # 💡 [핵심 수술] 리버스 모드일 경우 안전 마진(1.005) 전면 배제 및 5MA(star_price) 다이렉트 매핑
                     if is_rev:
-                        secret_quarter_target = math.ceil(actual_avg * 1.005 * 100) / 100.0
+                        secret_quarter_target = plan.get('star_price', 0.0)
                     else:
                         is_first_half = t_val < (split / 2)
                         secret_quarter_target = plan.get('star_price', 0.0) if is_first_half else math.ceil(actual_avg * 1.005 * 100) / 100.0
@@ -233,7 +271,9 @@ class TelegramController:
         surplus = cash - total_buy_needed
         rp_amount = surplus * 0.95 if surplus > 0 else 0
         
-        final_msg, markup = self.view.create_sync_report(status_text, dst_txt, cash, rp_amount, ticker_data_list, status_code in ["PRE", "REG"])
+        p_trade_data = self.cfg.get_p_trade_data() 
+        final_msg, markup = self.view.create_sync_report(status_text, dst_txt, cash, rp_amount, ticker_data_list, status_code in ["PRE", "REG"], p_trade_data=p_trade_data)
+        
         await update.message.reply_text(final_msg, reply_markup=markup, parse_mode='HTML')
 
     async def cmd_record(self, update, context):
@@ -748,6 +788,67 @@ class TelegramController:
         chat_id = update.effective_chat.id
         state = self.user_states.get(chat_id)
         if not state: return
+        
+        # ==========================================================
+        # 💡 [핵심 수술] 다중 P매매 지시서 파싱 및 P-VWAP 대기열 소각(OFF) 인터셉트 스위치
+        # ==========================================================
+        if state.startswith("P_TRADE_"):
+            parts = state.split("_")
+            ticker = parts[2]
+            multiplier = float(parts[3])
+            
+            raw_text = update.message.text.strip()
+            
+            # 💡 [OFF 스위치 엔진] 특수 명령어 감지 시 즉시 대기열 강제 철거 및 엔진 무효화
+            if raw_text.upper() in ["OFF", "취소", "종료", "끄기", "CANCEL", "STOP"]:
+                self.cfg.clear_p_trade_data()
+                await update.message.reply_text("🗑️ <b>[ P-VWAP 대기열 소각 (OFF) 완료 ]</b>\n당일 P매매 타격 대기열이 완벽히 비워졌으며 15:30 스케줄러 타격이 무효화되었습니다.", parse_mode='HTML')
+                del self.user_states[chat_id]
+                return
+                
+            raw_items = raw_text.replace('\n', ',').split(',')
+            
+            parsed_list = []
+            for item in raw_items:
+                item = item.strip()
+                if not item: continue
+                tokens = item.split()
+                if len(tokens) >= 3:
+                    side_kr = tokens[0]
+                    price_str = tokens[1]
+                    qty_str = tokens[2]
+                    
+                    try:
+                        side = "SELL" if "매도" in side_kr else "BUY"
+                        target_price = float(price_str)
+                        base_qty = float(qty_str)
+                        
+                        # KIS API 정수 규격 준수 (Floor 함수로 내림 처리)
+                        final_qty = math.floor(base_qty * multiplier) 
+                        
+                        if final_qty > 0:
+                            parsed_list.append({
+                                'side': side,
+                                'target_price': target_price,
+                                'qty': final_qty,
+                                'rem_qty': final_qty  # VWAP 분할 타격 시 차감될 잔여 수량
+                            })
+                    except ValueError:
+                        continue 
+            
+            if parsed_list:
+                p_data = self.cfg.get_p_trade_data()
+                p_data[ticker] = parsed_list
+                self.cfg.set_p_trade_data(p_data)
+                
+                msg = self.view.get_p_trade_parsed_message(multiplier, parsed_list)
+                await update.message.reply_text(msg, parse_mode='HTML')
+            else:
+                await update.message.reply_text("❌ <b>[입력 양식 오류]</b> 파싱에 실패했습니다.\n예시: <code>매도 45.50 10, 매수 42.00 15</code>\n취소하려면 <code>OFF</code> 또는 <code>취소</code>를 입력하세요.", parse_mode='HTML')
+            
+            del self.user_states[chat_id]
+            return
+
         try:
             val = float(update.message.text.strip())
             parts = state.split("_")
