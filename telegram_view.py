@@ -1,5 +1,5 @@
 # ==========================================================
-# [telegram_view.py]
+# [telegram_view.py] - Part 1
 # ⚠️ 이 주석 및 파일명 표기는 절대 지우지 마세요.
 # ==========================================================
 import os
@@ -18,7 +18,6 @@ class TelegramView:
         season_short = "🌞서머타임 ON" if "Summer" in season_icon else "❄️서머타임 OFF"
         sync_time = "08:30" if target_hour == 17 else "09:30"
 
-        # 💡 메인 화면은 오리지널 상태를 100% 유지합니다 (수정 없음)
         return (
             f"🌌 <b>[ 인피니트 스노우볼 {latest_version} ]</b>\n" 
             f"⚡ <b> 유동성 스나이퍼 & 멀티 코어 엔진</b> \n\n"
@@ -120,7 +119,6 @@ class TelegramView:
             keyboard.append([InlineKeyboardButton("⬆️ 접기 (최신 버전만 보기)", callback_data="VERSION:LATEST")])
             
         return msg, InlineKeyboardMarkup(keyboard) if keyboard else None
-
     def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active):
         total_locked = sum(t_info.get('escrow', 0.0) for t_info in ticker_data)
         
@@ -150,6 +148,7 @@ class TelegramView:
                 body_msg += f"💡 <b>원인 역산 추정:</b> 수동 매수로 수량이 급증했거나, '/seed' 시드머니 설정이 대폭 축소되었습니다.\n"
                 body_msg += f"🛡️ <b>가동 조치:</b> 마이너스 호가 차단용 절대 하한선($0.01) 방어막 가동 중!\n\n"
 
+            # 💡 [V23 롤백] 오리지널 VWAP 독립 모드 표출 (하이브리드 병합 철거)
             if v_mode == "V17":
                 v_mode_display = "V17 시크릿"
                 main_icon = "🦇"
@@ -342,6 +341,7 @@ class TelegramView:
         for t in active_tickers:
             ver = config.get_version(t)
             
+            # 💡 [V23 롤백] 오리지널 VWAP 독립 모드 표출
             if ver == "V17":
                 icon = "🦇"
                 ver_display = "V17 시크릿"
