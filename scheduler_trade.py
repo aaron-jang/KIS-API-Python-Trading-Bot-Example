@@ -303,7 +303,7 @@ async def scheduled_sniper_monitor(context):
                                             now_ts = time.time()
                                             fail_history = app_data.setdefault('sniper_fail_ts', {})
                                             if now_ts - fail_history.get(f"{t}_vwap", 0) > 300:
-                                                msg = f"🛡️ <b>[{t}] 하방 스나이퍼 매수 취소 (VWAP 필터 가동)</b>\n"
+                                                msg = f"🛡️ <b>[{t}] 하방 스나이퍼 매수 취소 (VWAP 필터 가 가동)</b>\n"
                                                 msg += f"반등 조건은 충족했으나 현재가(${c_close:.2f})가 당일 평균가(${c_vwap:.2f})를 넘어선 비싼 가격입니다. 가짜 반등(데드캣 바운스)으로 판별하여 사격을 취소합니다."
                                                 await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
                                                 fail_history[f"{t}_vwap"] = now_ts
@@ -422,7 +422,8 @@ async def scheduled_sniper_monitor(context):
                 
                 if is_rev:
                     q_qty = max(4, math.floor(qty / sell_divisor)) if qty >= 4 else qty
-                    base_trigger = safe_floor_price
+                    ma_5day = await asyncio.to_thread(broker.get_5day_ma, t)
+                    base_trigger = round(ma_5day, 2) if ma_5day > 0 else safe_floor_price
                 else:
                     is_first_half = t_val < (split / 2)
                     q_qty = math.ceil(qty / 4)
@@ -593,7 +594,6 @@ async def scheduled_sniper_monitor(context):
             app_data['sniper_timeout_ts'] = now_ts
     except Exception as e:
         logging.error(f"🚨 스나이퍼 모니터 에러: {e}")
-
 async def scheduled_vwap_trade(context):
     if not is_market_open(): return
     
@@ -695,14 +695,40 @@ async def scheduled_vwap_trade(context):
                         
                     if valid_buy_qty > 0:
                         res = broker.send_order(t, "BUY", valid_buy_qty, exec_price, "LIMIT")
-                        if res.get('rt_cd') == '0':
-                            spent = valid_buy_qty * exec_price
-                            s_active = rem_star_budget if exec_price <= star_price else 0.0
-                            a_active = rem_avg_budget if exec_price <= actual_avg else 0.0
-                            tot_act = s_active + a_active
-                            if tot_act > 0:
-                                vwap_cache[f"{t}_star_buy_executed"] = vwap_cache.get(f"{t}_star_buy_executed", 0.0) + spent * (s_active / tot_act)
-                                vwap_cache[f"{t}_avg_buy_executed"] = vwap_cache.get(f"{t}_avg_buy_executed", 0.0) + spent * (a_active / tot_act)
+                        odno = res.get('odno', '')
+                        
+                        # 💡 수술: ODNO 기반 8초 교차 검증 및 유령 체결 방어 이식
+                        if res.get('rt_cd') == '0' and odno:
+                            ccld_qty = 0
+                            for _ in range(4):
+                                await asyncio.sleep(2.0)
+                                unfilled_check = await asyncio.to_thread(broker.get_unfilled_orders_detail, t)
+                                my_order = next((ox for ox in unfilled_check if ox.get('odno') == odno), None)
+                                if my_order:
+                                    ccld_qty = int(float(my_order.get('tot_ccld_qty', 0)))
+                                    break
+                                    
+                                execs = await asyncio.to_thread(broker.get_execution_history, t, today_str, today_str)
+                                my_execs = [ex for ex in execs if ex.get('odno') == odno]
+                                if my_execs:
+                                    ccld_qty = sum(int(float(ex.get('ft_ccld_qty', '0'))) for ex in my_execs)
+                                    if ccld_qty >= valid_buy_qty:
+                                        break
+                                        
+                            # 💡 미체결 잔량 취소(소각)
+                            if ccld_qty < valid_buy_qty:
+                                await asyncio.to_thread(broker.cancel_order, t, odno)
+                                await asyncio.sleep(1.0)
+                                
+                            # 💡 실제 체결된 금액만 캐시에 업데이트
+                            if ccld_qty > 0:
+                                spent = ccld_qty * exec_price
+                                s_active = rem_star_budget if exec_price <= star_price else 0.0
+                                a_active = rem_avg_budget if exec_price <= actual_avg else 0.0
+                                tot_act = s_active + a_active
+                                if tot_act > 0:
+                                    vwap_cache[f"{t}_star_buy_executed"] = vwap_cache.get(f"{t}_star_buy_executed", 0.0) + spent * (s_active / tot_act)
+                                    vwap_cache[f"{t}_avg_buy_executed"] = vwap_cache.get(f"{t}_avg_buy_executed", 0.0) + spent * (a_active / tot_act)
                         await asyncio.sleep(0.2)
                             
                 # 💡 매도(SELL) VWAP 타임 슬라이싱 (별값 하한선 방어막)
@@ -719,8 +745,34 @@ async def scheduled_vwap_trade(context):
                             
                             if exec_price >= star_price: 
                                 res = broker.send_order(t, o['side'], o['qty'], exec_price, o['type'])
-                                if res.get('rt_cd') == '0':
-                                    vwap_cache[f"{t}_sell_executed"] = executed_sell_qty + o['qty']
+                                odno = res.get('odno', '')
+                                
+                                # 💡 수술: ODNO 기반 8초 교차 검증 및 유령 체결 방어 이식
+                                if res.get('rt_cd') == '0' and odno:
+                                    ccld_qty = 0
+                                    for _ in range(4):
+                                        await asyncio.sleep(2.0)
+                                        unfilled_check = await asyncio.to_thread(broker.get_unfilled_orders_detail, t)
+                                        my_order = next((ox for ox in unfilled_check if ox.get('odno') == odno), None)
+                                        if my_order:
+                                            ccld_qty = int(float(my_order.get('tot_ccld_qty', 0)))
+                                            break
+                                            
+                                        execs = await asyncio.to_thread(broker.get_execution_history, t, today_str, today_str)
+                                        my_execs = [ex for ex in execs if ex.get('odno') == odno]
+                                        if my_execs:
+                                            ccld_qty = sum(int(float(ex.get('ft_ccld_qty', '0'))) for ex in my_execs)
+                                            if ccld_qty >= o['qty']:
+                                                break
+                                                
+                                    # 💡 미체결 잔량 취소(소각)
+                                    if ccld_qty < o['qty']:
+                                        await asyncio.to_thread(broker.cancel_order, t, odno)
+                                        await asyncio.sleep(1.0)
+                                        
+                                    # 💡 실제 체결된 수량만 캐시에 업데이트
+                                    if ccld_qty > 0:
+                                        vwap_cache[f"{t}_sell_executed"] = vwap_cache.get(f"{t}_sell_executed", 0) + ccld_qty
                                 await asyncio.sleep(0.2)
                         
     try:
