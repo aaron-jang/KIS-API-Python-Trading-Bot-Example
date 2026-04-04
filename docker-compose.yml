@@ -1,0 +1,18 @@
+services:
+  trading-bot:
+    build: .
+    container_name: kis-trading-bot
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Seoul
+    volumes:
+      # 장부/설정 데이터 영속화 (컨테이너 재시작해도 유지)
+      - bot-data:/app/data
+      # 로그 영속화
+      - bot-logs:/app/logs
+
+volumes:
+  bot-data:
+  bot-logs:

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+.env
+data/
+logs/
+tests/
+docs/
+cache_sniper_sell_*.json
+README.md
+pytest.ini
+Dockerfile
+docker-compose.yml
+.dockerignore
