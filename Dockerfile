@@ -20,7 +20,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 소스 복사
 COPY main.py ./
 COPY trading_bot/ ./trading_bot/
-COPY background.png ./
 
 # 데이터/로그 디렉토리 생성
 RUN mkdir -p data logs
