@@ -1,0 +1,70 @@
+[
+  {
+    "id": 1,
+    "date": "2025-03-10",
+    "ticker": "TQQQ",
+    "side": "BUY",
+    "price": 50.00,
+    "qty": 10,
+    "avg_price": 50.00,
+    "exec_id": "INIT_1710000001",
+    "desc": "최초스냅샷",
+    "is_reverse": false
+  },
+  {
+    "id": 2,
+    "date": "2025-03-11",
+    "ticker": "TQQQ",
+    "side": "BUY",
+    "price": 48.50,
+    "qty": 14,
+    "avg_price": 49.10,
+    "exec_id": "REG_1710100001",
+    "is_reverse": false
+  },
+  {
+    "id": 3,
+    "date": "2025-03-12",
+    "ticker": "TQQQ",
+    "side": "BUY",
+    "price": 47.00,
+    "qty": 15,
+    "avg_price": 48.40,
+    "exec_id": "REG_1710200001",
+    "is_reverse": false
+  },
+  {
+    "id": 4,
+    "date": "2025-03-12",
+    "ticker": "TQQQ",
+    "side": "SELL",
+    "price": 52.00,
+    "qty": 10,
+    "avg_price": 48.40,
+    "exec_id": "REG_1710200002",
+    "is_reverse": false
+  },
+  {
+    "id": 5,
+    "date": "2025-03-10",
+    "ticker": "SOXL",
+    "side": "BUY",
+    "price": 25.00,
+    "qty": 20,
+    "avg_price": 25.00,
+    "exec_id": "INIT_1710000010",
+    "desc": "최초스냅샷",
+    "is_reverse": false
+  },
+  {
+    "id": 6,
+    "date": "2025-03-11",
+    "ticker": "SOXL",
+    "side": "BUY",
+    "price": 24.00,
+    "qty": 28,
+    "avg_price": 24.40,
+    "exec_id": "REG_1710100010",
+    "is_reverse": false
+  }
+]
