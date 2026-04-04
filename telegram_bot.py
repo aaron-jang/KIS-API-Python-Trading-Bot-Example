@@ -12,7 +12,8 @@ import asyncio
 import pandas_market_calendars as mcal 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from telegram_view import TelegramView 
+from telegram_view import TelegramView
+from scheduler_core import get_budget_allocation
 
 class TelegramController:
     def __init__(self, config, broker, strategy, tx_lock=None):
@@ -78,27 +79,7 @@ class TelegramController:
         return True
 
     def _calculate_budget_allocation(self, cash, tickers):
-        sorted_tickers = sorted(tickers, key=lambda x: 0 if x == "SOXL" else (1 if x == "TQQQ" else 2))
-        allocated = {}
-        rem_cash = cash
-        
-        for tx in sorted_tickers:
-            rev_state = self.cfg.get_reverse_state(tx)
-            is_rev = rev_state.get("is_active", False)
-            
-            if is_rev:
-                portion = 0.0
-            else:
-                split = self.cfg.get_split_count(tx)
-                portion = self.cfg.get_seed(tx) / split if split > 0 else 0
-                
-            if rem_cash >= portion:
-                allocated[tx] = rem_cash
-                rem_cash -= portion
-            else: 
-                allocated[tx] = 0
-                    
-        return sorted_tickers, allocated
+        return get_budget_allocation(cash, tickers, self.cfg)
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_admin(update): return
