@@ -6,28 +6,34 @@ ConfigManager._load_json/_save_json/_load_file/_save_file을
 """
 import copy
 import json
+import logging
 import os
 import shutil
 import tempfile
 import time
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class FileUtils:
-    def load_json(self, filename: str, default=None):
+    def load_json(self, filename: str, default: Any = None) -> Any:
+        """JSON 파일을 로드합니다. 파일이 없으면 default의 deepcopy를 반환합니다."""
         if os.path.exists(filename):
             try:
                 with open(filename, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"⚠️ [Config] JSON 로드 에러 ({filename}): {e}")
+                logger.warning("JSON 로드 에러 (%s): %s", filename, e)
                 try:
                     shutil.copy(filename, filename + f".bak_{int(time.time())}")
                 except Exception as backup_e:
-                    print(f"⚠️ [Config] 백업 실패: {backup_e}")
+                    logger.warning("백업 실패: %s", backup_e)
                 return copy.deepcopy(default) if default is not None else {}
         return copy.deepcopy(default) if default is not None else {}
 
-    def save_json(self, filename: str, data):
+    def save_json(self, filename: str, data: Any) -> None:
+        """JSON 파일을 원자적으로 저장합니다 (fsync + rename)."""
         try:
             dir_name = os.path.dirname(filename)
             if dir_name and not os.path.exists(dir_name):
@@ -41,23 +47,25 @@ class FileUtils:
 
             os.replace(temp_path, filename)
         except Exception as e:
-            print(f"❌ [Config] JSON 저장 중 치명적 에러 발생 ({filename}): {e}")
+            logger.error("JSON 저장 중 치명적 에러 발생 (%s): %s", filename, e)
             if "temp_path" in locals() and os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except Exception:
                     pass
 
-    def load_file(self, filename: str, default=None):
+    def load_file(self, filename: str, default: Optional[str] = None) -> Optional[str]:
+        """텍스트 파일을 로드합니다. 파일이 없으면 default를 반환합니다."""
         if os.path.exists(filename):
             try:
                 with open(filename, "r", encoding="utf-8") as f:
                     return f.read().strip()
             except Exception as e:
-                print(f"⚠️ [Config] 파일 로드 에러 ({filename}): {e}")
+                logger.warning("파일 로드 에러 (%s): %s", filename, e)
         return default
 
-    def save_file(self, filename: str, content):
+    def save_file(self, filename: str, content: Any) -> None:
+        """텍스트 파일을 원자적으로 저장합니다."""
         try:
             dir_name = os.path.dirname(filename)
             if dir_name and not os.path.exists(dir_name):
@@ -70,4 +78,4 @@ class FileUtils:
                 os.fsync(fd)
             os.replace(temp_path, filename)
         except Exception as e:
-            print(f"❌ [Config] 텍스트 파일 저장 에러 ({filename}): {e}")
+            logger.error("텍스트 파일 저장 에러 (%s): %s", filename, e)

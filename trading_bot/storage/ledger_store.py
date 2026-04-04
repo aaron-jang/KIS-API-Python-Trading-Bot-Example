@@ -4,10 +4,14 @@
 ConfigManager의 장부 관련 CRUD + 보유현황 계산 메서드를
 독립 클래스로 추출한 것입니다.
 """
+import logging
 import math
 import time
+from typing import Optional
 
 from trading_bot.storage.file_utils import FileUtils
+
+logger = logging.getLogger(__name__)
 
 
 class LedgerStore:
@@ -18,22 +22,24 @@ class LedgerStore:
         self._history_path = history_path
         self._split_history_path = split_history_path
 
-    def get_ledger(self) -> list:
+    def get_ledger(self) -> list[dict]:
         return self._fu.load_json(self._ledger_path, [])
 
-    def _save_ledger(self, ledger: list):
+    def _save_ledger(self, ledger: list[dict]) -> None:
         self._fu.save_json(self._ledger_path, ledger)
 
-    def clear_for_ticker(self, ticker: str):
+    def clear_for_ticker(self, ticker: str) -> None:
         ledger = self.get_ledger()
         remaining = [r for r in ledger if r["ticker"] != ticker]
         self._save_ledger(remaining)
 
-    def overwrite_genesis(self, ticker: str, genesis_records: list, actual_avg: float):
+    def overwrite_genesis(self, ticker: str, genesis_records: list[dict],
+                          actual_avg: float) -> None:
         ledger = self.get_ledger()
         target_recs = [r for r in ledger if r["ticker"] == ticker]
 
         if len(target_recs) > 0:
+            logger.warning("[보안 차단] %s의 장부 기록이 이미 존재하여 파괴적 Genesis 덮어쓰기를 차단했습니다.", ticker)
             print(f"⚠️ [보안 차단] {ticker}의 장부 기록이 이미 존재하여 파괴적 Genesis 덮어쓰기를 차단했습니다.")
             return
 
@@ -54,8 +60,9 @@ class LedgerStore:
             })
         self._save_ledger(ledger)
 
-    def overwrite_incremental(self, ticker: str, temp_recs: list,
-                              new_today_records: list, is_reverse: bool = False):
+    def overwrite_incremental(self, ticker: str, temp_recs: list[dict],
+                              new_today_records: list[dict],
+                              is_reverse: bool = False) -> None:
         ledger = self.get_ledger()
         remaining = [r for r in ledger if r["ticker"] != ticker]
         updated = list(temp_recs)
@@ -81,7 +88,7 @@ class LedgerStore:
         remaining.extend(updated)
         self._save_ledger(remaining)
 
-    def apply_stock_split(self, ticker: str, ratio: int):
+    def apply_stock_split(self, ticker: str, ratio: int) -> None:
         if ratio <= 0:
             return
         ledger = self.get_ledger()
@@ -97,7 +104,10 @@ class LedgerStore:
         if changed:
             self._save_ledger(ledger)
 
-    def calculate_holdings(self, ticker: str, records: list = None):
+    def calculate_holdings(self, ticker: str,
+                           records: Optional[list[dict]] = None
+                           ) -> tuple[int, float, float, float]:
+        """보유현황 계산. Returns: (qty, avg_price, invested, sold)"""
         if records is None:
             records = self.get_ledger()
         target_recs = [r for r in records if r["ticker"] == ticker]
@@ -129,7 +139,9 @@ class LedgerStore:
 
         return total_qty, avg_price, invested_up, sold_up
 
-    def calculate_v14_state(self, ticker: str, seed: float, split: float):
+    def calculate_v14_state(self, ticker: str, seed: float,
+                            split: float) -> tuple[float, float, float]:
+        """V14 상태 계산. Returns: (t_val, current_budget, remaining_cash)"""
         ledger = self.get_ledger()
         target_recs = sorted(
             [r for r in ledger if r["ticker"] == ticker],
@@ -177,7 +189,9 @@ class LedgerStore:
 
         return max(0.0, round(t_val, 4)), max(0.0, current_budget), max(0.0, rem_cash)
 
-    def calibrate_prices(self, ticker: str, target_date_str: str, exec_history: list) -> int:
+    def calibrate_prices(self, ticker: str, target_date_str: str,
+                         exec_history: list[dict]) -> int:
+        """체결 내역으로 장부 가격 보정. Returns: 변경된 레코드 수"""
         if not exec_history:
             return 0
 
@@ -227,14 +241,14 @@ class LedgerStore:
     def get_last_split_date(self, ticker: str) -> str:
         return self._fu.load_json(self._split_history_path, {}).get(ticker, "")
 
-    def set_last_split_date(self, ticker: str, date_str: str):
+    def set_last_split_date(self, ticker: str, date_str: str) -> None:
         d = self._fu.load_json(self._split_history_path, {})
         d[ticker] = date_str
         self._fu.save_json(self._split_history_path, d)
 
     # ── History ──
-    def get_history(self) -> list:
+    def get_history(self) -> list[dict]:
         return self._fu.load_json(self._history_path, [])
 
-    def save_history(self, history: list):
+    def save_history(self, history: list[dict]) -> None:
         self._fu.save_json(self._history_path, history)

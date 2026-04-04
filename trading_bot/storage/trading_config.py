@@ -6,6 +6,8 @@ ConfigManager의 seed/split/target/version/compound/sniper/reverse/misc 설정�
 """
 import os
 import datetime
+from typing import Any, Optional
+
 import pytz
 
 from trading_bot.storage.file_utils import FileUtils

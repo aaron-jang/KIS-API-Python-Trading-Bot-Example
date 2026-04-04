@@ -5,6 +5,8 @@ ConfigManager의 check_lock/set_lock/reset_locks/escrow 메서드를
 독립 클래스로 추출한 것입니다.
 """
 import datetime
+from typing import Optional
+
 import pytz
 
 from trading_bot.storage.file_utils import FileUtils
@@ -18,7 +20,7 @@ class LockManager:
     def _load(self) -> dict:
         return self._fu.load_json(self._path, {})
 
-    def _save(self, data: dict):
+    def _save(self, data: dict) -> None:
         self._fu.save_json(self._path, data)
 
     def _today_est(self) -> str:
@@ -29,21 +31,21 @@ class LockManager:
     def get_escrow(self, ticker: str) -> float:
         return float(self._load().get(f"ESCROW_{ticker}", 0.0))
 
-    def set_escrow(self, ticker: str, amount: float):
+    def set_escrow(self, ticker: str, amount: float) -> None:
         locks = self._load()
         locks[f"ESCROW_{ticker}"] = float(amount)
         self._save(locks)
 
-    def add_escrow(self, ticker: str, amount: float):
+    def add_escrow(self, ticker: str, amount: float) -> None:
         self.set_escrow(ticker, self.get_escrow(ticker) + float(amount))
 
-    def clear_escrow(self, ticker: str):
+    def clear_escrow(self, ticker: str) -> None:
         locks = self._load()
         if f"ESCROW_{ticker}" in locks:
             del locks[f"ESCROW_{ticker}"]
             self._save(locks)
 
-    def get_total_locked(self, exclude_ticker: str = None) -> float:
+    def get_total_locked(self, exclude_ticker: Optional[str] = None) -> float:
         locks = self._load()
         total = 0.0
         for k, v in locks.items():
@@ -58,18 +60,18 @@ class LockManager:
         today = self._today_est()
         return self._load().get(f"{today}_{ticker}_{market_type}", False)
 
-    def set_lock(self, ticker: str, market_type: str):
+    def set_lock(self, ticker: str, market_type: str) -> None:
         today = self._today_est()
         locks = self._load()
         locks[f"{today}_{ticker}_{market_type}"] = True
         self._save(locks)
 
-    def reset_all(self):
+    def reset_all(self) -> None:
         locks = self._load()
         surviving = {k: v for k, v in locks.items() if k.startswith("ESCROW_")}
         self._save(surviving)
 
-    def reset_for_ticker(self, ticker: str):
+    def reset_for_ticker(self, ticker: str) -> None:
         today = self._today_est()
         locks = self._load()
         keys_to_delete = [k for k in locks if k.startswith(f"{today}_{ticker}")]

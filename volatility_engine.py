@@ -2,12 +2,16 @@
 # [volatility_engine.py]
 # ⚠️ V3.2 패치: 기초지수 1년 ATR 절대 진폭 고정 및 공포지수 방향타 스위치 엔진 탑재
 # ==========================================================
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import os
 import json
+import logging
+import os
 import tempfile
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 CACHE_FILE = "data/volatility_cache.json"
 
@@ -77,7 +81,7 @@ def _save_cache(key, value):
             os.fsync(fd)
         os.replace(temp_path, CACHE_FILE)
     except Exception as e:
-        print(f"⚠️ [Engine] 캐시 저장 실패: {e}")
+        logger.warning("캐시 저장 실패: %s", e)
 
 def _calculate_1y_atr(ticker, cache_key, default_atr):
     """ 💡 기초지수의 최근 1년(252일) ATR14 평균값을 동적으로 연산하여 반환 """
@@ -114,7 +118,7 @@ def _calculate_1y_atr(ticker, cache_key, default_atr):
         return atr_1y_avg
 
     except Exception as e:
-        print(f"⚠️ [Engine] {ticker} ATR 연산 오류: {e}")
+        logger.warning("%s ATR 연산 오류: %s", ticker, e)
         return _load_cache(cache_key, default_atr)
 
 
@@ -214,7 +218,7 @@ def _get_target_drop(ticker, full=False):
         return target_drop
 
     except Exception as e:
-        print(f"❌ {ticker} 변동성 스캔 오류: {e}")
+        logger.error("%s 변동성 스캔 오류: %s", ticker, e)
         if full:
             return 0.0, 1.0, fallback_amp, fallback_amp
         return fallback_amp
