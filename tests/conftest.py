@@ -32,13 +32,41 @@ def cfg(tmp_data_dir, monkeypatch):
     """
     ConfigManager를 임시 디렉토리에서 동작하도록 패치.
     실제 파일시스템 I/O를 하되, 테스트 격리를 보장.
+    모든 파일 경로를 절대 경로로 변환하여 CWD 오염을 방지.
     """
-    # ConfigManager 임포트 전에 작업 디렉토리를 변경
     work_dir = str(tmp_data_dir.parent)
     monkeypatch.chdir(work_dir)
 
     from config import ConfigManager
     config = ConfigManager()
+
+    # FILES 딕셔너리의 모든 경로를 절대 경로로 변환하여 완전 격리
+    for key in config.FILES:
+        config.FILES[key] = os.path.join(work_dir, config.FILES[key])
+
+    # 내부 위임 객체도 동일한 절대 경로 기반으로 재설정
+    data_dir = str(tmp_data_dir)
+    config._ledger._ledger_path = config.FILES["LEDGER"]
+    config._ledger._history_path = config.FILES["HISTORY"]
+    config._ledger._split_history_path = config.FILES["SPLIT_HISTORY"]
+    config._locks._path = config.FILES["LOCKS"]
+    # TradingConfig 경로를 ConfigManager.FILES 기반 절대 경로로 재매핑
+    files = config.FILES
+    config._config._paths = {
+        "SEED": files["SEED_CFG"],
+        "SPLIT": files["SPLIT"],
+        "PROFIT": files["PROFIT_CFG"],
+        "COMPOUND": files["COMPOUND_CFG"],
+        "VERSION": files["VERSION_CFG"],
+        "SNIPER_MULT": files["SNIPER_MULTIPLIER_CFG"],
+        "REVERSE": files["REVERSE_CFG"],
+        "UPWARD_SNIPER": files["UPWARD_SNIPER"],
+        "TICKER": files["TICKER"],
+        "SECRET": files["SECRET_MODE"],
+        "CHAT_ID": files["CHAT_ID"],
+        "P_TRADE": files["P_TRADE_DATA"],
+    }
+
     return config
 
 
