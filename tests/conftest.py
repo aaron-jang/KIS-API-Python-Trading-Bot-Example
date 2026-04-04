@@ -37,7 +37,7 @@ def cfg(tmp_data_dir, monkeypatch):
     work_dir = str(tmp_data_dir.parent)
     monkeypatch.chdir(work_dir)
 
-    from config import ConfigManager
+    from trading_bot.config import ConfigManager
     config = ConfigManager()
 
     # FILES 딕셔너리의 모든 경로를 절대 경로로 변환하여 완전 격리

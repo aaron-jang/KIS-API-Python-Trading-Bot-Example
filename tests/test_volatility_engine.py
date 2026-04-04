@@ -21,7 +21,7 @@ class TestVolatilityCache:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
         result = ve._load_cache("MISSING_KEY", 99.9)
@@ -31,7 +31,7 @@ class TestVolatilityCache:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         cache_path = str(tmp_path / "data" / "volatility_cache.json")
         monkeypatch.setattr(ve, "CACHE_FILE", cache_path)
 
@@ -43,7 +43,7 @@ class TestVolatilityCache:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         cache_path = str(tmp_path / "data" / "volatility_cache.json")
         monkeypatch.setattr(ve, "CACHE_FILE", cache_path)
 
@@ -80,11 +80,11 @@ class TestATRCalculation:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
         mock_df = self._make_mock_df()
-        with patch("volatility_engine.yf.download", return_value=mock_df):
+        with patch("trading_bot.strategy.volatility.yf.download", return_value=mock_df):
             result = ve._calculate_1y_atr("QQQ", "QQQ_ATR_1Y", 1.65)
 
         assert isinstance(result, float)
@@ -94,10 +94,10 @@ class TestATRCalculation:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
-        with patch("volatility_engine.yf.download", return_value=pd.DataFrame()):
+        with patch("trading_bot.strategy.volatility.yf.download", return_value=pd.DataFrame()):
             result = ve._calculate_1y_atr("QQQ", "QQQ_ATR_1Y", 1.65)
 
         assert result == 1.65  # 기본값 폴백
@@ -119,13 +119,13 @@ class TestTargetDrop:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
         mock_vxn = self._make_vxn_df()
         mock_qqq = TestATRCalculation()._make_mock_df()
 
-        with patch("volatility_engine.yf.download", side_effect=[mock_vxn, mock_qqq]):
+        with patch("trading_bot.strategy.volatility.yf.download", side_effect=[mock_vxn, mock_qqq]):
             result = ve.get_tqqq_target_drop()
 
         assert result < 0  # 하락폭은 항상 음수
@@ -135,10 +135,10 @@ class TestTargetDrop:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
-        with patch("volatility_engine.yf.download", side_effect=Exception("Network error")):
+        with patch("trading_bot.strategy.volatility.yf.download", side_effect=Exception("Network error")):
             result = ve.get_tqqq_target_drop()
 
         assert result == round(-(1.65 * 3), 2)
@@ -147,10 +147,10 @@ class TestTargetDrop:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
-        with patch("volatility_engine.yf.download", side_effect=Exception("Network error")):
+        with patch("trading_bot.strategy.volatility.yf.download", side_effect=Exception("Network error")):
             result = ve.get_soxl_target_drop()
 
         assert result == round(-(2.93 * 3), 2)
@@ -159,10 +159,10 @@ class TestTargetDrop:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
-        with patch("volatility_engine.yf.download", side_effect=Exception("err")):
+        with patch("trading_bot.strategy.volatility.yf.download", side_effect=Exception("err")):
             result = ve.get_tqqq_target_drop_full()
 
         assert len(result) == 4
@@ -174,10 +174,10 @@ class TestTargetDrop:
         monkeypatch.chdir(tmp_path)
         (tmp_path / "data").mkdir()
 
-        import volatility_engine as ve
+        import trading_bot.strategy.volatility as ve
         monkeypatch.setattr(ve, "CACHE_FILE", str(tmp_path / "data" / "volatility_cache.json"))
 
-        with patch("volatility_engine.yf.download", side_effect=Exception("err")):
+        with patch("trading_bot.strategy.volatility.yf.download", side_effect=Exception("err")):
             result = ve.get_soxl_target_drop_full()
 
         assert len(result) == 4

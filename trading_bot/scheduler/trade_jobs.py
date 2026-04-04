@@ -15,7 +15,7 @@ import pandas_market_calendars as mcal
 import random
 
 # 💡 1부 코어에서 공통 모듈 임포트
-from scheduler_core import is_market_open, get_budget_allocation, get_target_hour
+from trading_bot.scheduler.core_jobs import is_market_open, get_budget_allocation, get_target_hour
 
 
 # ==========================================================

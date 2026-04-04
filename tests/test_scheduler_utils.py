@@ -16,26 +16,26 @@ import pytz
 class TestBudgetAllocation:
 
     def test_single_ticker_gets_all_cash(self, cfg):
-        from scheduler_core import get_budget_allocation
+        from trading_bot.scheduler.core_jobs import get_budget_allocation
         sorted_t, allocated = get_budget_allocation(10000, ["TQQQ"], cfg)
         assert sorted_t == ["TQQQ"]
         assert allocated["TQQQ"] == 10000
 
     def test_multi_ticker_allocation_order(self, cfg):
         """SOXL이 항상 먼저 배분"""
-        from scheduler_core import get_budget_allocation
+        from trading_bot.scheduler.core_jobs import get_budget_allocation
         sorted_t, allocated = get_budget_allocation(10000, ["TQQQ", "SOXL"], cfg)
         assert sorted_t[0] == "SOXL"
         assert sorted_t[1] == "TQQQ"
 
     def test_multi_ticker_both_get_cash(self, cfg):
-        from scheduler_core import get_budget_allocation
+        from trading_bot.scheduler.core_jobs import get_budget_allocation
         sorted_t, allocated = get_budget_allocation(10000, ["TQQQ", "SOXL"], cfg)
         assert allocated["SOXL"] > 0
         assert allocated["TQQQ"] > 0
 
     def test_zero_cash(self, cfg):
-        from scheduler_core import get_budget_allocation
+        from trading_bot.scheduler.core_jobs import get_budget_allocation
         sorted_t, allocated = get_budget_allocation(0, ["TQQQ", "SOXL"], cfg)
         # 잔고 0이면 portion(168)보다 작으므로 0 배정
         assert allocated["SOXL"] == 0
@@ -44,7 +44,7 @@ class TestBudgetAllocation:
     def test_reverse_ticker_gets_zero_portion(self, cfg):
         """리버스 중인 종목은 portion=0"""
         cfg.set_reverse_state("TQQQ", True, 3, -15.0, "2025-03-12")
-        from scheduler_core import get_budget_allocation
+        from trading_bot.scheduler.core_jobs import get_budget_allocation
         sorted_t, allocated = get_budget_allocation(10000, ["TQQQ", "SOXL"], cfg)
         # SOXL(정상)은 잔고 전체, TQQQ(리버스)는 남은 잔고
         assert allocated["SOXL"] == 10000
@@ -56,7 +56,7 @@ class TestBudgetAllocation:
 class TestExecutionPriceMatching:
 
     def test_exact_match(self):
-        from scheduler_core import get_actual_execution_price
+        from trading_bot.scheduler.core_jobs import get_actual_execution_price
         execs = [
             {"sll_buy_dvsn_cd": "02", "ft_ccld_qty": "10", "ft_ccld_unpr3": "50.00", "ord_tmd": "170500"},
         ]
@@ -64,7 +64,7 @@ class TestExecutionPriceMatching:
         assert price == 50.0
 
     def test_partial_match(self):
-        from scheduler_core import get_actual_execution_price
+        from trading_bot.scheduler.core_jobs import get_actual_execution_price
         execs = [
             {"sll_buy_dvsn_cd": "02", "ft_ccld_qty": "5", "ft_ccld_unpr3": "50.00", "ord_tmd": "170500"},
             {"sll_buy_dvsn_cd": "02", "ft_ccld_qty": "5", "ft_ccld_unpr3": "48.00", "ord_tmd": "170300"},
@@ -74,11 +74,11 @@ class TestExecutionPriceMatching:
         assert price == math.floor(49.0 * 100) / 100.0
 
     def test_empty_execs_returns_zero(self):
-        from scheduler_core import get_actual_execution_price
+        from trading_bot.scheduler.core_jobs import get_actual_execution_price
         assert get_actual_execution_price([], 10, "02") == 0.0
 
     def test_no_matching_side(self):
-        from scheduler_core import get_actual_execution_price
+        from trading_bot.scheduler.core_jobs import get_actual_execution_price
         execs = [
             {"sll_buy_dvsn_cd": "01", "ft_ccld_qty": "10", "ft_ccld_unpr3": "50.00", "ord_tmd": "170500"},
         ]
@@ -88,7 +88,7 @@ class TestExecutionPriceMatching:
 
     def test_overflow_qty_capped(self):
         """target_qty보다 체결량이 많으면 target까지만"""
-        from scheduler_core import get_actual_execution_price
+        from trading_bot.scheduler.core_jobs import get_actual_execution_price
         execs = [
             {"sll_buy_dvsn_cd": "02", "ft_ccld_qty": "20", "ft_ccld_unpr3": "50.00", "ord_tmd": "170500"},
         ]
@@ -102,13 +102,13 @@ class TestExecutionPriceMatching:
 class TestTimeUtils:
 
     def test_get_target_hour_returns_tuple(self):
-        from scheduler_core import get_target_hour
+        from trading_bot.scheduler.core_jobs import get_target_hour
         hour, msg = get_target_hour()
         assert hour in [17, 18]
         assert isinstance(msg, str)
 
     def test_is_dst_active_returns_bool(self):
-        from scheduler_core import is_dst_active
+        from trading_bot.scheduler.core_jobs import is_dst_active
         result = is_dst_active()
         assert isinstance(result, bool)
 
@@ -122,7 +122,7 @@ class TestVwapDominance:
     def test_with_valid_dataframe(self, cfg):
         import pandas as pd
         import numpy as np
-        from strategy import InfiniteStrategy
+        from trading_bot.strategy.infinite import InfiniteStrategy
 
         strategy = InfiniteStrategy(cfg)
 
@@ -147,7 +147,7 @@ class TestVwapDominance:
 
     def test_with_insufficient_data(self, cfg):
         import pandas as pd
-        from strategy import InfiniteStrategy
+        from trading_bot.strategy.infinite import InfiniteStrategy
 
         strategy = InfiniteStrategy(cfg)
 
@@ -159,7 +159,7 @@ class TestVwapDominance:
         assert result["vwap_price"] == 0.0
 
     def test_with_none_input(self, cfg):
-        from strategy import InfiniteStrategy
+        from trading_bot.strategy.infinite import InfiniteStrategy
         strategy = InfiniteStrategy(cfg)
         result = strategy.analyze_vwap_dominance(None)
         assert result["vwap_price"] == 0.0

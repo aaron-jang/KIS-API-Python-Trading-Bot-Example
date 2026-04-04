@@ -12,8 +12,8 @@ import asyncio
 import pandas_market_calendars as mcal 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from telegram_view import TelegramView
-from scheduler_core import get_budget_allocation
+from trading_bot.telegram.views import TelegramView
+from trading_bot.scheduler.core_jobs import get_budget_allocation
 
 class TelegramController:
     def __init__(self, config, broker, strategy, tx_lock=None):

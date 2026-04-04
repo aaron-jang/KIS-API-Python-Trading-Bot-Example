@@ -14,7 +14,7 @@ import pytz
 import tempfile
 import pandas as pd   
 import numpy as np
-import volatility_engine as ve  
+import trading_bot.strategy.volatility as ve
 
 class KoreaInvestmentBroker:
     def __init__(self, app_key, app_secret, cano, acnt_prdt_cd="01"):

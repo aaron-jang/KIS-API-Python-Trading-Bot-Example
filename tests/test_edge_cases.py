@@ -5,7 +5,7 @@ Phase 5: 엣지 케이스 테스트 보강
 """
 import math
 import pytest
-from strategy import InfiniteStrategy
+from trading_bot.strategy.infinite import InfiniteStrategy
 
 
 # ==============================================================

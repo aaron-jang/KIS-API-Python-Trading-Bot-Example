@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 소스 복사
-COPY *.py ./
+COPY main.py ./
 COPY trading_bot/ ./trading_bot/
 COPY background.png ./
 

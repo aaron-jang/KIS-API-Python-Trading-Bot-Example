@@ -10,7 +10,7 @@ from unittest.mock import patch
 from datetime import datetime
 import pytz
 
-from vwap_strategy import VwapStrategy
+from trading_bot.strategy.vwap import VwapStrategy
 
 
 @pytest.fixture
@@ -58,29 +58,29 @@ class TestTimeWindow:
 
     def test_bin_index_during_vwap_window(self, vwap):
         """15:30~15:59 EST 동안 0~29 반환"""
-        with patch("vwap_strategy.datetime") as mock_dt:
+        with patch("trading_bot.strategy.vwap.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(15, 30)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             assert vwap._get_current_bin_index() == 0
 
-        with patch("vwap_strategy.datetime") as mock_dt:
+        with patch("trading_bot.strategy.vwap.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(15, 45)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             assert vwap._get_current_bin_index() == 15
 
-        with patch("vwap_strategy.datetime") as mock_dt:
+        with patch("trading_bot.strategy.vwap.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(15, 59)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             assert vwap._get_current_bin_index() == 29
 
     def test_bin_index_outside_window(self, vwap):
         """VWAP 윈도우 밖이면 -1"""
-        with patch("vwap_strategy.datetime") as mock_dt:
+        with patch("trading_bot.strategy.vwap.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(14, 0)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             assert vwap._get_current_bin_index() == -1
 
-        with patch("vwap_strategy.datetime") as mock_dt:
+        with patch("trading_bot.strategy.vwap.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(15, 29)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             assert vwap._get_current_bin_index() == -1
