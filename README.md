@@ -1,6 +1,12 @@
 # KIS-API-Python-Trading-Bot-Example
 
-> KIS Open API 기반 미국 주식 자동매매 봇 (V23.01 VWAP 자율주행 에디션)
+[![CI](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+![Tests](https://img.shields.io/badge/tests-217%20passed-brightgreen)
+![Version](https://img.shields.io/badge/version-V23.14-orange)
+![License](https://img.shields.io/badge/license-educational-lightgrey)
+
+> KIS Open API 기반 미국 주식 자동매매 봇 (V23.14 VWAP 자율주행 에디션)
 
 한국투자증권(KIS) Open API를 활용하여 미국 주식 자동매매 시스템을 구축해보는 파이썬 예제 코드입니다. 증권사 API 통신, 스케줄러 자동화, 텔레그램 봇 제어 등을 학습하기 위한 기술적 레퍼런스로 작성되었습니다.
 
