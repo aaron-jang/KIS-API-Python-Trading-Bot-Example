@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![Tests](https://img.shields.io/badge/tests-217%20passed-brightgreen)
+![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/aaron-jang/c51777029ca0a51c869a27ed671e9dfd/raw/test-results.json)
 ![Version](https://img.shields.io/badge/version-V23.14-orange)
 ![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey)
 

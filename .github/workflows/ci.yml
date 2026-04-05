@@ -28,7 +28,26 @@ jobs:
           pip install pytest pytest-asyncio
 
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
+        id: pytest
+        run: |
+          RESULT=$(python -m pytest tests/ -v --tb=short 2>&1)
+          echo "$RESULT"
+          # "217 passed" 같은 패턴에서 숫자 추출
+          PASSED=$(echo "$RESULT" | grep -oP '\d+(?= passed)' || echo "0")
+          FAILED=$(echo "$RESULT" | grep -oP '\d+(?= failed)' || echo "0")
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+      - name: Update test badge
+        if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: c51777029ca0a51c869a27ed671e9dfd
+          filename: test-results.json
+          label: tests
+          message: "${{ steps.pytest.outputs.passed }} passed"
+          color: ${{ steps.pytest.outputs.failed == '0' && 'brightgreen' || 'red' }}
 
   docker:
     runs-on: ubuntu-latest
