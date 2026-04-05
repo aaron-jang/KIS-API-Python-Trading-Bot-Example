@@ -67,22 +67,60 @@ docker compose logs -f
 docker compose down
 ```
 
-### 방법 2: 직접 실행
+### 방법 2: 스크립트 실행 (라즈베리파이 / Linux)
 
 ```bash
-# 1. 패키지 설치
-pip install -r requirements.txt
+git clone https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example.git
+cd KIS-API-Python-Trading-Bot-Example
 
-# 2. 환경변수 설정
-cp .env.example .env
-# .env 파일에 실제 키 입력
+# 라즈베리파이의 경우 시스템 라이브러리 필요
+sudo apt install -y libopenblas-dev
 
-# 3. 실행
-python main.py
+# 초기 설치 (venv 생성 + 패키지 설치)
+./scripts/setup.sh
 
-# (서버 백그라운드 실행)
-nohup python main.py &
+# .env 편집
+vi .env
+
+# 실행 / 중지 / 로그
+./scripts/start.sh
+./scripts/stop.sh
+./scripts/logs.sh
 ```
+
+### 방법 3: systemd 서비스 등록 (재부팅 시 자동 실행)
+
+```bash
+sudo tee /etc/systemd/system/kis-trading-bot.service << 'EOF'
+[Unit]
+Description=KIS Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/project/kis-api-python
+Environment="TZ=Asia/Seoul"
+ExecStart=/home/pi/project/kis-api-python/venv/bin/python /home/pi/project/kis-api-python/main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable kis-trading-bot   # 부팅 시 자동 시작
+sudo systemctl start kis-trading-bot    # 지금 시작
+
+# 관리
+sudo systemctl status kis-trading-bot   # 상태 확인
+sudo systemctl restart kis-trading-bot  # 재시작
+journalctl -u kis-trading-bot -f        # 실시간 로그
+```
+
+> `User`, `WorkingDirectory`, `ExecStart` 경로는 환경에 맞게 수정하세요.
 
 ### 환경 변수 (.env)
 
