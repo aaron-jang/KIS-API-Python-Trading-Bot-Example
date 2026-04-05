@@ -5,3 +5,5 @@ data/
 logs/
 .env
 cache_sniper_sell_*.json
+venv/
+.bot.pid
