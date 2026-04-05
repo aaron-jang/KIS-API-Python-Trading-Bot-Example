@@ -18,7 +18,7 @@ from trading_bot.storage.lock_manager import LockManager
 from trading_bot.storage.trading_config import TradingConfig
 
 try:
-    from version_history import VERSION_HISTORY
+    from trading_bot.version_history import VERSION_HISTORY
 except ImportError:
     VERSION_HISTORY = ["V14.x [-] 버전 기록 파일(version_history.py)을 찾을 수 없습니다."]
 
