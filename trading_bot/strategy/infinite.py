@@ -8,6 +8,7 @@ import json
 import tempfile
 import pandas as pd
 from datetime import datetime, timedelta
+import pytz
 
 class InfiniteStrategy:
     def __init__(self, config):
@@ -18,7 +19,8 @@ class InfiniteStrategy:
 
     def _mark_quarter_sell_completed(self, ticker):
         flag_file = f"cache_sniper_sell_{ticker}.json"
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        est = pytz.timezone('US/Eastern')
+        today_str = datetime.now(est).strftime("%Y-%m-%d")
 
         if os.path.exists(flag_file):
             try:

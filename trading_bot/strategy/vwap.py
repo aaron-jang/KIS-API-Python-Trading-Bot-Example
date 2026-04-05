@@ -48,7 +48,8 @@ class VwapStrategy:
     def _check_sniper_sell_lockdown(self, ticker):
         """스나이퍼 1/4 쿼터 매도 당일 성공 여부를 원자적 캐시에서 확인하여 제논의 역설(다중 매도) 방어"""
         flag_file = f"cache_sniper_sell_{ticker}.json"
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        est = pytz.timezone('US/Eastern')
+        today_str = datetime.now(est).strftime("%Y-%m-%d")
         
         if os.path.exists(flag_file):
             try:
