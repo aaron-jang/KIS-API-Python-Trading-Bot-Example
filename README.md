@@ -67,13 +67,13 @@ docker compose logs -f
 docker compose down
 ```
 
-### 방법 2: 스크립트 실행 (라즈베리파이 / Linux)
+### 방법 2: 스크립트 실행 (Linux)
 
 ```bash
 git clone https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example.git
 cd KIS-API-Python-Trading-Bot-Example
 
-# 라즈베리파이의 경우 시스템 라이브러리 필요
+# 시스템 라이브러리 설치 (Debian/Ubuntu/라즈베리파이)
 sudo apt install -y libopenblas-dev
 
 # 초기 설치 (venv 생성 + 패키지 설치)
@@ -88,7 +88,7 @@ vi .env
 ./scripts/logs.sh
 ```
 
-### 방법 3: systemd 서비스 등록 (재부팅 시 자동 실행)
+### 방법 3: systemd 서비스 등록 (Linux, 재부팅 시 자동 실행)
 
 ```bash
 sudo tee /etc/systemd/system/kis-trading-bot.service << 'EOF'
