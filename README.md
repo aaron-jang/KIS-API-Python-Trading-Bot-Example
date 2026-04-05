@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Tests](https://img.shields.io/badge/tests-217%20passed-brightgreen)
 ![Version](https://img.shields.io/badge/version-V23.14-orange)
-![License](https://img.shields.io/badge/license-educational-lightgrey)
+![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey)
 
 > KIS Open API 기반 미국 주식 자동매매 봇 (V23.14 VWAP 자율주행 에디션)
 
