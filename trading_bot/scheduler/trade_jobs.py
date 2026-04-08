@@ -118,20 +118,12 @@ async def scheduled_sniper_monitor(context):
                 avg_price = float(h.get('avg') or 0.0)
                 if qty == 0: continue
                 
-                # 💡 야후 API 병렬 호출 (순차 ~12초 → 병렬 ~3초)
-                async def _timed_call(name, fn, *args):
-                    _t = time.time()
-                    result = await asyncio.to_thread(fn, *args)
-                    logging.debug(f"⏱️ [{t}] {name}: {time.time()-_t:.1f}초")
-                    return result
-
+                # 🔬 [임시] 순차 호출 벤치마크 — 병렬과 비교 후 되돌림
                 try:
-                    curr_p, prev_c, df_1min, (actual_day_high, _day_low) = await asyncio.gather(
-                        _timed_call("current_price", broker.get_current_price, t),
-                        _timed_call("prev_close", broker.get_previous_close, t),
-                        _timed_call("1min_candles", broker.get_1min_candles_df, t),
-                        _timed_call("day_high_low", broker.get_day_high_low, t),
-                    )
+                    curr_p = await asyncio.to_thread(broker.get_current_price, t)
+                    prev_c = await asyncio.to_thread(broker.get_previous_close, t)
+                    df_1min = await asyncio.to_thread(broker.get_1min_candles_df, t)
+                    actual_day_high, _day_low = await asyncio.to_thread(broker.get_day_high_low, t)
                 except Exception:
                     curr_p, prev_c, df_1min, actual_day_high = 0, 0, None, 0
 
