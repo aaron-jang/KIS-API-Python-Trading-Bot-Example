@@ -130,7 +130,11 @@ def run():
     tx_lock = asyncio.Lock()
     bot = TelegramController(cfg, broker, strategy, tx_lock)
 
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # 💡 스케줄러가 최대 120초 지연되어도 missed 처리하지 않고 실행
+    from telegram.ext import Defaults
+    defaults = Defaults()
+    app = Application.builder().token(TELEGRAM_TOKEN).defaults(defaults).build()
+    app.job_queue.scheduler.configure(job_defaults={'misfire_grace_time': 120})
 
     for cmd, handler in [
         ("start", bot.cmd_start),
