@@ -84,6 +84,7 @@ async def scheduled_sniper_monitor(context):
                     os.remove(_f)
             except: pass
             
+    _sniper_start = time.time()
     async def _do_sniper():
         async with tx_lock:
             cash, holdings = broker.get_account_balance()
@@ -117,17 +118,23 @@ async def scheduled_sniper_monitor(context):
                 avg_price = float(h.get('avg') or 0.0)
                 if qty == 0: continue
                 
-                curr_p = await asyncio.to_thread(broker.get_current_price, t)
-                prev_c = await asyncio.to_thread(broker.get_previous_close, t)
-                if curr_p <= 0: continue
-                
+                # 💡 야후 API 병렬 호출 (순차 ~12초 → 병렬 ~3초)
                 try:
-                    df_1min = await asyncio.to_thread(broker.get_1min_candles_df, t)
+                    curr_p, prev_c, df_1min, (actual_day_high, _day_low) = await asyncio.gather(
+                        asyncio.to_thread(broker.get_current_price, t),
+                        asyncio.to_thread(broker.get_previous_close, t),
+                        asyncio.to_thread(broker.get_1min_candles_df, t),
+                        asyncio.to_thread(broker.get_day_high_low, t),
+                    )
+                except Exception:
+                    curr_p, prev_c, df_1min, actual_day_high = 0, 0, None, 0
+
+                if curr_p <= 0: continue
+
+                try:
                     vwap_status = strategy.analyze_vwap_dominance(df_1min)
                 except Exception:
                     vwap_status = {"vwap_price": 0.0, "is_strong_up": False, "is_strong_down": False}
-
-                actual_day_high, _ = await asyncio.to_thread(broker.get_day_high_low, t)
                 
                 tracking_info = tracking_cache.setdefault(t, {
                     'is_tracking': False, 'lowest_price': float('inf'), 'day_high': 0.0, 'armed_price': 0.0, 'alerted': False,
@@ -332,6 +339,8 @@ async def scheduled_sniper_monitor(context):
         await asyncio.wait_for(_do_sniper(), timeout=45.0)
     except asyncio.TimeoutError: pass
     except Exception as e: logging.error(f"🚨 스나이퍼 에러: {e}")
+    finally:
+        logging.info(f"⏱️ [스나이퍼] 실행 완료: {time.time() - _sniper_start:.1f}초")
 
 # ==========================================================
 # 2. 🛡️ Fail-Safe: 선제적 LOC 취소 & VWAP 초기화 (15:30 EST)
