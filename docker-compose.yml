@@ -8,11 +8,6 @@ services:
     environment:
       - TZ=Asia/Seoul
     volumes:
-      # 장부/설정 데이터 영속화 (컨테이너 재시작해도 유지)
-      - bot-data:/app/data
-      # 로그 영속화
-      - bot-logs:/app/logs
-
-volumes:
-  bot-data:
-  bot-logs:
+      # 프로젝트 디렉토리에 직접 적재
+      - ./data:/app/data
+      - ./logs:/app/logs
