@@ -207,9 +207,11 @@ def run():
         # 💡 [Phase 2] 장 후반 15:30 EST: 사전 LOC 전량 취소 후 VWAP 1분봉 타격 준비
         jq.run_daily(scheduled_vwap_init_and_cancel, time=datetime.time(15, 30, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 스나이퍼 감시 및 VWAP 슬라이싱 (60초 간격 무한 반복)
-        jq.run_repeating(scheduled_sniper_monitor, interval=60, chat_id=cfg.get_chat_id(), data=app_data)
-        jq.run_repeating(scheduled_vwap_trade, interval=60, chat_id=cfg.get_chat_id(), data=app_data)
+        # 💡 스나이퍼 감시 및 VWAP 슬라이싱 (매 분 cron, 서로 20초 간격으로 분산)
+        jq.run_custom(scheduled_sniper_monitor, job_kwargs={"trigger": "cron", "second": "20"},
+                       chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_custom(scheduled_vwap_trade, job_kwargs={"trigger": "cron", "second": "40"},
+                       chat_id=cfg.get_chat_id(), data=app_data)
 
         # 💡 [Phase 3] 15:59 EST 긴급 수혈 (MOC)
         jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
