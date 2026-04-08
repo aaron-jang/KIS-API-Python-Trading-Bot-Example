@@ -152,6 +152,23 @@ def run():
     ]:
         app.add_handler(CommandHandler(cmd, handler))
 
+    # 텔레그램 / 입력 시 자동완성 메뉴 등록
+    async def post_init(application):
+        from telegram import BotCommand
+        await application.bot.set_my_commands([
+            BotCommand("start", "봇 시작 및 운영 스케줄 표시"),
+            BotCommand("sync", "통합 지시서 조회"),
+            BotCommand("record", "장부 동기화 및 조회"),
+            BotCommand("history", "졸업 명예의 전당"),
+            BotCommand("settlement", "분할/복리/액면 설정"),
+            BotCommand("seed", "개별 시드머니 관리"),
+            BotCommand("ticker", "운용 종목 선택"),
+            BotCommand("mode", "상방 스나이퍼 ON/OFF"),
+            BotCommand("version", "버전 및 업데이트 내역"),
+            BotCommand("reset", "비상 해제 메뉴"),
+        ])
+    app.post_init = post_init
+
     app.add_handler(CallbackQueryHandler(bot.handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
 
