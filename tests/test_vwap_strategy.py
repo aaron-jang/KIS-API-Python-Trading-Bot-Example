@@ -140,8 +140,8 @@ class TestVwapPlan:
         )
         assert plan["orders"] == []
 
-    def test_strong_up_blocks_buy(self, vwap):
-        """StrongUp 추세장에서 매수 차단"""
+    def test_strong_up_does_not_block_buy(self, vwap):
+        """V24.04: StrongUp 매수 차단 철거 — 상승장에서도 매수 계속"""
         vwap_status = {"is_strong_up": True, "is_strong_down": False}
         plan = self._make_plan_at_bin(
             vwap, 15,
@@ -149,8 +149,8 @@ class TestVwapPlan:
             remaining_target=5000.0, side="BUY",
             vwap_status=vwap_status
         )
-        assert plan["orders"] == []
-        assert "StrongUp" in plan["process_status"]
+        # V24.04 이후: StrongUp에서도 매수 차단하지 않음
+        assert "StrongUp" not in plan.get("process_status", "")
 
     def test_strong_up_does_not_block_sell(self, vwap):
         """StrongUp은 매도를 차단하지 않음"""
