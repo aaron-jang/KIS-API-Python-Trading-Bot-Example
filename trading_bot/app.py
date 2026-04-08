@@ -163,40 +163,40 @@ def run():
             'bot': bot,
             'tx_lock': tx_lock
         }
-        kst = pytz.timezone('Asia/Seoul')
         est = pytz.timezone('US/Eastern')
 
-        # 1. 시스템 관리 스케줄러 (core)
-        for tt in [datetime.time(7,0,tzinfo=kst), datetime.time(11,0,tzinfo=kst), datetime.time(16,30,tzinfo=kst), datetime.time(22,0,tzinfo=kst)]:
+        # 1. 시스템 관리 스케줄러 (core) — 모든 시간 EST 기준
+        for tt in [datetime.time(18,0,tzinfo=est), datetime.time(22,0,tzinfo=est), datetime.time(3,30,tzinfo=est), datetime.time(9,0,tzinfo=est)]:
             jq.run_daily(scheduled_token_check, time=tt, days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
-        jq.run_daily(scheduled_auto_sync_summer, time=datetime.time(8, 30, tzinfo=kst), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
-        jq.run_daily(scheduled_auto_sync_winter, time=datetime.time(9, 30, tzinfo=kst), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
+        # 장부 동기화 (19:30 EST = KST 08:30 여름 / 09:30 겨울, DST 자동 처리)
+        jq.run_daily(scheduled_auto_sync_summer, time=datetime.time(19, 30, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_auto_sync_winter, time=datetime.time(19, 30, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
-        for hour in [17, 18]:
-            jq.run_daily(scheduled_force_reset, time=datetime.time(hour, 0, tzinfo=kst), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        # 매매 초기화 (04:00 EST = KST 17:00 여름 / 18:00 겨울, DST 자동 처리)
+        jq.run_daily(scheduled_force_reset, time=datetime.time(4, 0, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
+        # 변동성 마스터 스위치 (10:20 EST)
         jq.run_daily(scheduled_volatility_scan, time=datetime.time(10, 20, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 2. 실전 전투 매매 스케줄러 (trade)
-        # 💡 [Phase 1] 프리장(17:05 KST)에 '선제적 양방향 LOC 덫' 사전 전송
-        for hour in [17, 18]:
-            jq.run_daily(scheduled_regular_trade, time=datetime.time(hour, 5, tzinfo=kst), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        # 💡 [Phase 1] 프리장 선제적 양방향 LOC 덫 전송 (04:05 EST)
+        jq.run_daily(scheduled_regular_trade, time=datetime.time(4, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 [Phase 2] 장 후반 15:30 EST 기상: 사전 LOC 전량 취소 후 VWAP 1분봉 타격 준비
+        # 💡 [Phase 2] 장 후반 15:30 EST: 사전 LOC 전량 취소 후 VWAP 1분봉 타격 준비
         jq.run_daily(scheduled_vwap_init_and_cancel, time=datetime.time(15, 30, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 💡 스나이퍼 감시 및 VWAP 슬라이싱 (60초 간격 무한 반복)
         jq.run_repeating(scheduled_sniper_monitor, interval=60, chat_id=cfg.get_chat_id(), data=app_data)
         jq.run_repeating(scheduled_vwap_trade, interval=60, chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 [Phase 3] 15:59 EST 긴급 수혈 스케줄러 (MOC)
+        # 💡 [Phase 3] 15:59 EST 긴급 수혈 (MOC)
         jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 💡 [Phase 4] 애프터마켓 로터리 덫 (16:05 EST)
         jq.run_daily(scheduled_after_market_lottery, time=datetime.time(16, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 3. 자정 청소 (core)
-        jq.run_daily(scheduled_self_cleaning, time=datetime.time(6, 0, tzinfo=kst), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
+        # 3. 자정 청소 (17:00 EST = 장 마감 후)
+        jq.run_daily(scheduled_self_cleaning, time=datetime.time(17, 0, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
     app.run_polling()
