@@ -649,9 +649,10 @@ class TelegramView:
         img = Image.new('RGB', (W, H), color='#1E222D')
         draw = ImageDraw.Draw(img)
         
+        _bg_path = os.path.join(os.path.dirname(__file__), "..", "assets", "background.png")
         try:
-            if os.path.exists("background.png"):
-                bg = Image.open("background.png").convert("RGB")
+            if os.path.exists(_bg_path):
+                bg = Image.open(_bg_path).convert("RGB")
                 bg_ratio = bg.width / bg.height
                 if bg_ratio > (W / IMG_H):
                     new_w = int(IMG_H * bg_ratio)
