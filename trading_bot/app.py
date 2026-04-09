@@ -1,7 +1,7 @@
 # ==========================================================
 # [trading_bot/app.py]
 # 애플리케이션 부트스트래핑 및 스케줄러 등록
-# 💡 [V24.06] 애프터마켓 3% 로터리 덫 (16:05 EST) 스케줄러 이식 완료
+# 💡 [V24.15] 2대 코어 체제 확립, V_VWAP 영구 소각
 # ==========================================================
 
 import os
@@ -14,12 +14,12 @@ from dotenv import load_dotenv
 
 from trading_bot.config import ConfigManager
 from trading_bot.broker import KoreaInvestmentBroker
-from trading_bot.strategy import InfiniteStrategy, VwapStrategy
+from trading_bot.strategy import InfiniteStrategy
 from trading_bot.telegram import TelegramController
 
-# 💡 [V_REV] 신규 역추세 엔진 의존성 주입
 from trading_bot.strategy.queue_ledger import QueueLedger
 from trading_bot.strategy.reversion import ReversionStrategy
+from trading_bot.strategy.volatility import VolatilityEngine
 
 from trading_bot.scheduler.core_jobs import (
     scheduled_token_check,
@@ -61,10 +61,18 @@ async def scheduled_volatility_scan(context):
         print("📊 현재 운용 중인 종목이 없습니다.")
     else:
         briefing_lines = []
+        vol_engine = VolatilityEngine()
+
         for ticker in active_tickers:
-            dummy_weight = 0.85 if ticker == "TQQQ" else 1.15
-            status_text = "OFF 권장" if dummy_weight <= 1.0 else "ON 권장"
-            briefing_lines.append(f"{ticker}: {dummy_weight} ({status_text})")
+            try:
+                weight_data = await asyncio.to_thread(vol_engine.calculate_weight, ticker)
+                real_weight = float(weight_data.get('weight', 1.0) if isinstance(weight_data, dict) else weight_data)
+            except Exception as e:
+                logging.warning(f"[{ticker}] 변동성 지표 산출 실패. 폴백 적용: {e}")
+                real_weight = 0.85 if ticker == "TQQQ" else 1.15
+
+            status_text = "OFF 권장" if real_weight <= 1.0 else "ON 권장"
+            briefing_lines.append(f"{ticker}: {real_weight:.2f} ({status_text})")
 
         print(f"📊 [자율주행 지표] {' | '.join(briefing_lines)} (상세 게이지: /mode)")
     print("=" * 60 + "\n")
@@ -109,7 +117,7 @@ def run():
     latest_version = cfg.get_latest_version()
 
     print("=" * 60)
-    print(f"🚀 앱솔루트 스노우볼 퀀트 엔진 {latest_version} (VWAP 스플릿 & 경량화 아키텍처 탑재)")
+    print(f"🚀 앱솔루트 스노우볼 퀀트 엔진 {latest_version} (초경량 2대 코어 아키텍처 탑재)")
     print(f"📅 날짜 정보: {season_msg}")
     print(f"⏰ 자동 동기화: 08:30(여름) / 09:30(겨울) 자동 변경")
     print(f"🛡️ 1-Tier 자율주행 지표 스캔 대기 중... (매일 10:20 EST 격발)")
@@ -121,19 +129,29 @@ def run():
 
     broker = KoreaInvestmentBroker(APP_KEY, APP_SECRET, CANO, ACNT_PRDT_CD)
     strategy = InfiniteStrategy(cfg)
-    vwap_strategy = VwapStrategy(cfg)
 
-    # 💡 [V_REV] 독립 모듈 객체 초기화
     queue_ledger = QueueLedger()
     strategy_rev = ReversionStrategy()
 
     tx_lock = asyncio.Lock()
-    bot = TelegramController(cfg, broker, strategy, tx_lock)
 
-    # 💡 스케줄러가 최대 120초 지연되어도 missed 처리하지 않고 실행
-    from telegram.ext import Defaults
-    defaults = Defaults()
-    app = Application.builder().token(TELEGRAM_TOKEN).defaults(defaults).build()
+    bot = TelegramController(
+        cfg, broker, strategy, tx_lock,
+        queue_ledger=queue_ledger,
+        strategy_rev=strategy_rev
+    )
+
+    # 💡 텔레그램 네트워크 지연 방어 + 커넥션 풀 확장 + misfire 120초 허용
+    app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .connect_timeout(30.0)
+        .pool_timeout(30.0)
+        .connection_pool_size(512)
+        .build()
+    )
     app.job_queue.scheduler.configure(job_defaults={'misfire_grace_time': 120})
 
     for cmd, handler in [
@@ -147,10 +165,11 @@ def run():
         ("mode", bot.cmd_mode),
         ("reset", bot.cmd_reset),
         ("version", bot.cmd_version),
-        ("v17", bot.cmd_v17),
-        ("v4", bot.cmd_v4),
     ]:
         app.add_handler(CommandHandler(cmd, handler))
+
+    app.add_handler(CallbackQueryHandler(bot.handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
 
     # 텔레그램 / 입력 시 자동완성 메뉴 등록
     async def post_init(application):
@@ -169,16 +188,12 @@ def run():
         ])
     app.post_init = post_init
 
-    app.add_handler(CallbackQueryHandler(bot.handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
-
     if cfg.get_chat_id():
         jq = app.job_queue
         app_data = {
             'cfg': cfg,
             'broker': broker,
             'strategy': strategy,
-            'vwap_strategy': vwap_strategy,
             'queue_ledger': queue_ledger,
             'strategy_rev': strategy_rev,
             'bot': bot,
@@ -186,40 +201,33 @@ def run():
         }
         est = pytz.timezone('US/Eastern')
 
-        # 1. 시스템 관리 스케줄러 (core) — 모든 시간 EST 기준
+        # 1. 시스템 관리 스케줄러 — EST 기준 통일
         for tt in [datetime.time(18,0,tzinfo=est), datetime.time(22,0,tzinfo=est), datetime.time(3,30,tzinfo=est), datetime.time(9,0,tzinfo=est)]:
             jq.run_daily(scheduled_token_check, time=tt, days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 장부 동기화 (19:30 EST = KST 08:30 여름 / 09:30 겨울, DST 자동 처리)
         jq.run_daily(scheduled_auto_sync_summer, time=datetime.time(19, 30, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
         jq.run_daily(scheduled_auto_sync_winter, time=datetime.time(19, 30, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 매매 초기화 (04:00 EST = KST 17:00 여름 / 18:00 겨울, DST 자동 처리)
         jq.run_daily(scheduled_force_reset, time=datetime.time(4, 0, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 변동성 마스터 스위치 (10:20 EST)
         jq.run_daily(scheduled_volatility_scan, time=datetime.time(10, 20, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 2. 실전 전투 매매 스케줄러 (trade)
-        # 💡 [Phase 1] 프리장 선제적 양방향 LOC 덫 전송 (04:05 EST)
+        # 2. 실전 전투 매매 스케줄러
         jq.run_daily(scheduled_regular_trade, time=datetime.time(4, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 [Phase 2] 장 후반 15:30 EST: 사전 LOC 전량 취소 후 VWAP 1분봉 타격 준비
         jq.run_daily(scheduled_vwap_init_and_cancel, time=datetime.time(15, 30, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 스나이퍼 감시 및 VWAP 슬라이싱 (매 분 cron, 서로 20초 간격으로 분산)
+        # 스나이퍼 감시 및 V-REV 슬라이싱 (cron, 서로 20초 간격 분산)
         jq.run_custom(scheduled_sniper_monitor, job_kwargs={"trigger": "cron", "second": "20"},
                        chat_id=cfg.get_chat_id(), data=app_data)
         jq.run_custom(scheduled_vwap_trade, job_kwargs={"trigger": "cron", "second": "40"},
                        chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 [Phase 3] 15:59 EST 긴급 수혈 (MOC)
         jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 💡 [Phase 4] 애프터마켓 로터리 덫 (16:05 EST)
         jq.run_daily(scheduled_after_market_lottery, time=datetime.time(16, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
-        # 3. 자정 청소 (17:00 EST = 장 마감 후)
+        # 3. 자정 청소
         jq.run_daily(scheduled_self_cleaning, time=datetime.time(17, 0, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
     app.run_polling()

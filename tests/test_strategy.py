@@ -308,10 +308,9 @@ class TestEdgeCases:
         )
         required_keys = [
             "orders", "core_orders", "bonus_orders",
-            "smart_core_orders", "smart_bonus_orders",
             "t_val", "one_portion", "process_status",
             "is_reverse", "star_price", "star_ratio",
-            "real_cash_used", "tracking_info"
+            "real_cash_used"
         ]
         for key in required_keys:
             assert key in plan, f"누락된 키: {key}"

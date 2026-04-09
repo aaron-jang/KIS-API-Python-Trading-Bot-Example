@@ -172,7 +172,8 @@ class KoreaInvestmentBroker:
         if res.get('rt_cd') == '0':
             api_success = True
             o2 = res.get('output2', {})
-            if isinstance(o2, list) and len(o2) > 0: o2 = o2[0]
+            if isinstance(o2, list):
+                o2 = o2[0] if len(o2) > 0 else {}
             
             dncl_amt = self._safe_float(o2.get('frcr_dncl_amt_2', 0))       
             sll_amt = self._safe_float(o2.get('frcr_sll_amt_smtl', 0))      
@@ -191,7 +192,8 @@ class KoreaInvestmentBroker:
                 api_success = True
                 if cash <= 0:
                     o2 = res_hold.get('output2', {})
-                    if isinstance(o2, list) and len(o2) > 0: o2 = o2[0]
+                    if isinstance(o2, list):
+                        o2 = o2[0] if len(o2) > 0 else {}
                     new_cash = self._safe_float(o2.get('ovrs_ord_psbl_amt', 0))
                     if new_cash > cash: cash = new_cash
                 

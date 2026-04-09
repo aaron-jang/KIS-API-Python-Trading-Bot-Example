@@ -183,38 +183,17 @@ class TestLocksAndEscrow:
     def test_escrow_default_zero(self, cfg):
         assert cfg.get_escrow_cash("TQQQ") == 0.0
 
-    def test_set_and_get_escrow(self, cfg):
-        cfg.set_escrow_cash("TQQQ", 500.0)
-        assert cfg.get_escrow_cash("TQQQ") == 500.0
+    def test_escrow_is_dynamic_from_ledger(self, cfg):
+        """V24.10: 에스크로는 장부 기반 동적 산출 (set은 no-op)"""
+        cfg.set_escrow_cash("TQQQ", 500.0)  # no-op
+        assert cfg.get_escrow_cash("TQQQ") == 0.0  # 장부 비어있으면 0
 
-    def test_add_escrow(self, cfg):
-        cfg.set_escrow_cash("TQQQ", 100.0)
-        cfg.add_escrow_cash("TQQQ", 200.0)
-        assert cfg.get_escrow_cash("TQQQ") == 300.0
+    def test_total_locked_cash_empty(self, cfg):
+        assert cfg.get_total_locked_cash() == 0.0
 
-    def test_clear_escrow(self, cfg):
-        cfg.set_escrow_cash("TQQQ", 500.0)
-        cfg.clear_escrow_cash("TQQQ")
-        assert cfg.get_escrow_cash("TQQQ") == 0.0
-
-    def test_total_locked_cash(self, cfg):
-        cfg.set_escrow_cash("TQQQ", 300.0)
-        cfg.set_escrow_cash("SOXL", 200.0)
-        total = cfg.get_total_locked_cash()
-        assert total == 500.0
-
-    def test_total_locked_cash_exclude(self, cfg):
-        cfg.set_escrow_cash("TQQQ", 300.0)
-        cfg.set_escrow_cash("SOXL", 200.0)
-        total = cfg.get_total_locked_cash(exclude_ticker="TQQQ")
-        assert total == 200.0
-
-    def test_reset_locks_preserves_escrow(self, cfg):
-        cfg.set_escrow_cash("TQQQ", 500.0)
+    def test_reset_locks(self, cfg):
         cfg.set_lock("TQQQ", "REG")
         cfg.reset_locks()
-        # 에스크로는 보존
-        assert cfg.get_escrow_cash("TQQQ") == 500.0
 
 
 # ==============================================================
@@ -315,19 +294,4 @@ class TestCalculations:
         assert isinstance(changed, int)
 
 
-# ==============================================================
-# 8. P매매 데이터 테스트
-# ==============================================================
-class TestPTradeData:
-    def test_p_trade_default_empty(self, cfg):
-        assert cfg.get_p_trade_data() == {}
-
-    def test_set_and_get_p_trade_data(self, cfg):
-        data = {"ticker": "TQQQ", "targets": [{"side": "BUY", "price": 45.0, "qty": 10}]}
-        cfg.set_p_trade_data(data)
-        assert cfg.get_p_trade_data() == data
-
-    def test_clear_p_trade_data(self, cfg):
-        cfg.set_p_trade_data({"some": "data"})
-        cfg.clear_p_trade_data()
-        assert cfg.get_p_trade_data() == {}
+    # P매매 테스트 삭제 (V24.00에서 P매매 소각됨)
