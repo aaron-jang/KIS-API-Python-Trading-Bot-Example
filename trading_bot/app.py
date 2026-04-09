@@ -154,6 +154,15 @@ def run():
     )
     app.job_queue.scheduler.configure(job_defaults={'misfire_grace_time': 120})
 
+    # 텔레그램 타임아웃 자동 재시도 핸들러
+    async def error_handler(update, context):
+        import telegram.error
+        if isinstance(context.error, (telegram.error.TimedOut, telegram.error.NetworkError)):
+            logging.warning(f"텔레그램 네트워크 에러 (자동 복구 대기): {context.error}")
+        else:
+            logging.error(f"처리되지 않은 에러: {context.error}")
+    app.add_error_handler(error_handler)
+
     for cmd, handler in [
         ("start", bot.cmd_start),
         ("record", bot.cmd_record),
