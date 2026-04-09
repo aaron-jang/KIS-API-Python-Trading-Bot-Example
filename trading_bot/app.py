@@ -185,6 +185,7 @@ def run():
             BotCommand("mode", "상방 스나이퍼 ON/OFF"),
             BotCommand("version", "버전 및 업데이트 내역"),
             BotCommand("reset", "비상 해제 메뉴"),
+            BotCommand("add_q", "V-REV 큐 수동 추가"),
         ])
     app.post_init = post_init
 
