@@ -3,10 +3,10 @@
 [![CI](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/aaron-jang/c51777029ca0a51c869a27ed671e9dfd/raw/test-results.json)
-![Version](https://img.shields.io/badge/version-V23.14-orange)
+![Version](https://img.shields.io/badge/version-V24.09-orange)
 ![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey)
 
-> KIS Open API 기반 미국 주식 자동매매 봇 (V23.14 VWAP 자율주행 에디션)
+> KIS Open API 기반 미국 주식 자동매매 봇 (V24.09 VWAP 자율주행 에디션)
 
 한국투자증권(KIS) Open API를 활용하여 미국 주식 자동매매 시스템을 구축해보는 파이썬 예제 코드입니다. 증권사 API 통신, 스케줄러 자동화, 텔레그램 봇 제어 등을 학습하기 위한 기술적 레퍼런스로 작성되었습니다.
 
@@ -209,5 +209,5 @@ python -m pytest tests/test_strategy.py -v
 ## 문서
 
 - [KST 타임존 영구 고정 가이드](docs/kst-timezone-fix.md) — 클라우드 서버 시간대 리셋 문제 해결
-- [트레이딩 시스템 사양서](docs/trading-system-spec.md) — V23.14 매매 로직 상세 명세
+- [트레이딩 시스템 사양서](docs/trading-system-spec.md) — V24.09 매매 로직 상세 명세
 - [VWAP 알고리즘 연구](docs/vwap-research.md) — 시장 미시구조 심층 분석
