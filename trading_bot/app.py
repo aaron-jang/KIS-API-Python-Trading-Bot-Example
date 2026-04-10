@@ -218,14 +218,14 @@ def run():
         jq.run_daily(scheduled_auto_sync_summer, time=datetime.time(19, 30, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
         jq.run_daily(scheduled_auto_sync_winter, time=datetime.time(19, 30, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
 
-        jq.run_daily(scheduled_force_reset, time=datetime.time(4, 0, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_force_reset, time=datetime.time(4, 0, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
-        jq.run_daily(scheduled_volatility_scan, time=datetime.time(10, 20, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_volatility_scan, time=datetime.time(10, 20, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 2. 실전 전투 매매 스케줄러
-        jq.run_daily(scheduled_regular_trade, time=datetime.time(4, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_regular_trade, time=datetime.time(4, 5, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
-        jq.run_daily(scheduled_vwap_init_and_cancel, time=datetime.time(15, 30, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_vwap_init_and_cancel, time=datetime.time(15, 30, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 스나이퍼 감시 및 V-REV 슬라이싱 (cron, 서로 20초 간격 분산)
         jq.run_custom(scheduled_sniper_monitor, job_kwargs={"trigger": "cron", "second": "20"},
@@ -233,9 +233,9 @@ def run():
         jq.run_custom(scheduled_vwap_trade, job_kwargs={"trigger": "cron", "second": "40"},
                        chat_id=cfg.get_chat_id(), data=app_data)
 
-        jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
-        jq.run_daily(scheduled_after_market_lottery, time=datetime.time(16, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
+        jq.run_daily(scheduled_after_market_lottery, time=datetime.time(16, 5, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 3. 자정 청소
         jq.run_daily(scheduled_self_cleaning, time=datetime.time(17, 0, tzinfo=est), days=tuple(range(7)), chat_id=cfg.get_chat_id(), data=app_data)
