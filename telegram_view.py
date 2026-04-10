@@ -2,6 +2,7 @@
 # [telegram_view.py] - Part 1/2 부 (상반부)
 # ⚠️ V-REV 장부 강제 초기화 3중 경고 방어막 유지
 # 💡 [V24.15 대수술] 2대 코어(V14, V-REV) 체제 UI 최적화 및 V_VWAP 적출
+# 💡 [V24.17 수술] V-REV 큐 관리 메뉴 내 수동 긴급 수혈(Emergency MOC) 격발 버튼 신설
 # ==========================================================
 import os
 import math
@@ -190,6 +191,9 @@ class TelegramView:
                     callback_data = f"DEL_REQ:{ticker}:{date_str}"
                 
                 keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
+            
+            # 💡 [수술] 수동 긴급 수혈(Emergency MOC) 버튼 이식
+            keyboard.append([InlineKeyboardButton("🩸 수동 긴급 수혈 (최근 로트 강제매도)", callback_data=f"EMERGENCY_MOC:{ticker}")])
         
         keyboard.append([InlineKeyboardButton("🔙 대시보드로 돌아가기", callback_data=f"REC:SYNC:{ticker}")])
         return msg, InlineKeyboardMarkup(keyboard)
@@ -209,6 +213,7 @@ class TelegramView:
             [InlineKeyboardButton("🔙 취소 및 목록으로", callback_data=f"QUEUE:VIEW:{ticker}")]
         ]
         return msg, InlineKeyboardMarkup(keyboard)
+
 # ==========================================================
 # [telegram_view.py] - Part 2/2 부 (하반부)
 # ⚠️ V-REV 설정줄 숨김 및 종목 간 띄어쓰기(엔터) 간격 완벽 교정
@@ -597,3 +602,4 @@ class TelegramView:
             [InlineKeyboardButton("💎 SOXL + TQQQ 통합", callback_data="TICKER:ALL")]
         ]
         return f"🔄 <b>[ 운용 종목 선택 ]</b>\n현재: <b>{', '.join(current_tickers)}</b>", InlineKeyboardMarkup(keyboard)
+

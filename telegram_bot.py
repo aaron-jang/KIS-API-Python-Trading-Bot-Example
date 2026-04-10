@@ -6,6 +6,7 @@
 # 💡 [V24.15 대수술] vwap_strategy 의존성 100% 적출 및 2대 코어 최적화
 # 💡 [V24.16 팩트 동기화] /sync 지시서 V-REV 0주 및 1층 가이던스 타점 코어 엔진 동기화 완료
 # 💡 [V24.16 팩트 동기화] 누락된 핸들러 및 콜백 라우터 100% 무손실 복원 완료
+# 💡 [V24.17 수술] 수동 긴급 수혈(Emergency MOC) 인라인 콜백 라우터 신설
 # ==========================================================
 import logging
 import datetime
@@ -694,6 +695,7 @@ class TelegramController:
 # ⚠️ 수술 내역: 
 # 1. 누락되었던 7개 명령어 핸들러(cmd_history ~ cmd_version) 100% 무손실 복원
 # 2. 인라인 버튼 중앙 통제 라우터(handle_callback) 및 텍스트 핸들러 완벽 복원
+# 💡 [V24.17 수술] 수동 긴급 수혈(EMERGENCY_MOC) 팩트 기반 격발 엔진 신설
 # ==========================================================
 
     async def cmd_history(self, update, context):
@@ -851,6 +853,46 @@ class TelegramController:
                     except: pass
                 msg, markup = self.view.get_queue_management_menu(ticker, q_data)
                 await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
+
+        # 💡 [V24.17 수술] 수동 긴급 수혈 콜백 엔진 추가
+        elif action == "EMERGENCY_MOC":
+            ticker = sub
+            if not getattr(self, 'queue_ledger', None):
+                from queue_ledger import QueueLedger
+                self.queue_ledger = QueueLedger()
+                
+            q_data = self.queue_ledger.get_queue(ticker)
+            total_q = sum(item.get("qty", 0) for item in q_data)
+            
+            if total_q == 0:
+                await query.answer("⚠️ 큐(Queue)가 텅 비어있어 수혈할 잔여 물량이 없습니다.", show_alert=True)
+                return
+                
+            await query.answer("⏳ KIS 서버에 수동 긴급 수혈(MOC) 명령을 격발합니다...", show_alert=False)
+            
+            # 💡 가장 최근에 물린(마지막 지층) 물량을 추출
+            emergency_qty = q_data[-1].get('qty', 0)
+            
+            if emergency_qty > 0:
+                async with self.tx_lock:
+                    curr_p = float(await asyncio.to_thread(self.broker.get_current_price, ticker) or 0.0)
+                    exec_price = max(0.01, curr_p * 0.99) 
+                    
+                    res = self.broker.send_order(ticker, "SELL", emergency_qty, exec_price, "LIMIT")
+                    
+                    if res.get('rt_cd') == '0':
+                        self.queue_ledger.pop_lots(ticker, emergency_qty)
+                        
+                        msg = f"🚨 <b>[{ticker}] 수동 긴급 수혈 (Emergency MOC) 격발 완료!</b>\n"
+                        msg += f"▫️ 포트폴리오 매니저의 개입으로 최근 로트 <b>{emergency_qty}주</b>를 강제 청산하여 현금을 확보했습니다.\n"
+                        await context.bot.send_message(chat_id=update.effective_chat.id, text=msg, parse_mode='HTML')
+                        
+                        new_q_data = self.queue_ledger.get_queue(ticker)
+                        new_msg, markup = self.view.get_queue_management_menu(ticker, new_q_data)
+                        await query.edit_message_text(new_msg, reply_markup=markup, parse_mode='HTML')
+                    else:
+                        err_msg = res.get('msg1', '알 수 없는 에러')
+                        await query.edit_message_text(f"❌ <b>[{ticker}] 수동 긴급 수혈 실패:</b> {err_msg}", parse_mode='HTML')
 
         elif action == "DEL_REQ":
             ticker = sub
@@ -1259,4 +1301,3 @@ class TelegramController:
         finally:
             if chat_id in self.user_states:
                 del self.user_states[chat_id]
-

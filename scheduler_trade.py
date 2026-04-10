@@ -8,6 +8,7 @@
 # 5. [애프터마켓 3% 로터리 덫 신설] KST 05:05 (16:05 EST) 잔여 물량 전량 +3% 지정가 전송
 # 💡 [V24.15 대수술] V_VWAP 스케줄러 100% 영구 소각 및 2대 코어(V14, V-REV) 최적화
 # 💡 [V24.16 팩트 동기화] 스윕 피니셔 1층 잔량 타점 고유 단가(layer_1_price) 앵커 교정
+# 💡 [V24.17 수술] 긴급 수혈(Emergency MOC) 자동 스케줄러 영구 적출 (수동 격발로 전환)
 # ==========================================================
 import os
 import logging
@@ -517,58 +518,7 @@ async def scheduled_vwap_trade(context):
         logging.error(f"🚨 VWAP 스케줄러 에러: {e}")
 
 # ==========================================================
-# 4. 🩸 긴급 수혈 스케줄러 (MOC)
-# ==========================================================
-async def scheduled_emergency_liquidation(context):
-    if not is_market_open(): return
-    
-    app_data = context.job.data
-    cfg, broker, strategy_rev, queue_ledger, tx_lock = app_data['cfg'], app_data['broker'], app_data['strategy_rev'], app_data['queue_ledger'], app_data['tx_lock']
-    chat_id = context.job.chat_id
-    
-    async def _do_emergency():
-        async with tx_lock:
-            cash, holdings = broker.get_account_balance()
-            if holdings is None: return
-            
-            for t in cfg.get_active_tickers():
-                if cfg.get_version(t) != "V_REV":
-                    continue
-                    
-                q_data = queue_ledger.get_queue(t)
-                total_q = sum(item.get("qty", 0) for item in q_data)
-                if total_q == 0: continue
-
-                rev_daily_budget = float(cfg.get_seed(t) or 0.0) * 0.15
-                safe_cash = float(cash or 0.0)
-                
-                if safe_cash < (rev_daily_budget / 2.0):
-                    emergency_qty = strategy_rev.get_emergency_liquidation_qty(
-                        alloc_cash=rev_daily_budget, 
-                        available_cash=safe_cash, 
-                        q_data=q_data
-                    )
-                    
-                    if emergency_qty > 0:
-                        # 💡 [핵심 수술] Safe Casting
-                        curr_p = float(await asyncio.to_thread(broker.get_current_price, t) or 0.0)
-                        exec_price = max(0.01, curr_p * 0.99) 
-                        
-                        res = broker.send_order(t, "SELL", emergency_qty, exec_price, "LIMIT")
-                        if res.get('rt_cd') == '0':
-                            queue_ledger.pop_lots(t, emergency_qty) 
-                            
-                            msg = f"🚨 <b>[{t}] 현금 고갈! 종가 긴급 수혈 (Emergency MOC) 발동!</b>\n"
-                            msg += f"▫️ 다음 날 투입할 예산 확보를 위해, 가장 최근에 물린 <b>{emergency_qty}주</b>를 강제 매도 처리했습니다.\n"
-                            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML', disable_notification=True)
-
-    try:
-        await asyncio.wait_for(_do_emergency(), timeout=45.0)
-    except Exception as e:
-        logging.error(f"🚨 긴급 수혈 에러: {e}")
-
-# ==========================================================
-# 5. 🌅 정규장 오픈 (17:05) 전송 (기존 V17 찌꺼기 100% 소각)
+# 4. 🌅 정규장 오픈 (17:05) 전송 (기존 V17 찌꺼기 100% 소각)
 # ==========================================================
 async def scheduled_regular_trade(context):
     kst = pytz.timezone('Asia/Seoul')
@@ -733,7 +683,7 @@ async def scheduled_regular_trade(context):
     await context.bot.send_message(chat_id=chat_id, text="🚨 <b>[긴급 에러] 통신 복구 최종 실패. 수동 점검 요망!</b>", parse_mode='HTML')
 
 # ==========================================================
-# 6. 🌙 애프터마켓 로터리 덫 (16:05 EST / 05:05 KST)
+# 5. 🌙 애프터마켓 로터리 덫 (16:05 EST / 05:05 KST)
 # ==========================================================
 async def scheduled_after_market_lottery(context):
     app_data = context.job.data
@@ -774,4 +724,3 @@ async def scheduled_after_market_lottery(context):
         await asyncio.wait_for(_do_lottery(), timeout=60.0)
     except Exception as e:
         logging.error(f"🚨 애프터마켓 로터리 덫 에러: {e}")
-

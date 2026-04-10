@@ -4,6 +4,7 @@
 # 💡 [V24.10] 텔레그램 API 통신 타임아웃(TimedOut) 방어 및 커넥션 풀 최적화 이식 완료
 # 💡 [V24.11 수술] VolatilityEngine 동적 연결 및 TelegramController 의존성 주입
 # 💡 [V24.15 대수술] V_VWAP 플러그인 의존성 100% 영구 적출 및 2대 코어 체제 확립
+# 💡 [V24.17 수술] 긴급 수혈(Emergency MOC) 자동 스케줄러 영구 적출 (수동 격발로 전환)
 # ==========================================================
 
 import os
@@ -39,7 +40,6 @@ from scheduler_trade import (
     scheduled_sniper_monitor,
     scheduled_vwap_trade,
     scheduled_vwap_init_and_cancel,  
-    scheduled_emergency_liquidation,
     scheduled_after_market_lottery  
 )
 
@@ -221,10 +221,7 @@ def main():
         jq.run_repeating(scheduled_sniper_monitor, interval=60, chat_id=cfg.get_chat_id(), data=app_data)
         jq.run_repeating(scheduled_vwap_trade, interval=60, chat_id=cfg.get_chat_id(), data=app_data)
         
-        # 💡 [Phase 3] 15:59 EST 긴급 수혈 스케줄러 (MOC)
-        jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
-        
-        # 💡 [Phase 4] 애프터마켓 로터리 덫 (16:05 EST)
+        # 💡 [Phase 3] 애프터마켓 로터리 덫 (16:05 EST)
         jq.run_daily(scheduled_after_market_lottery, time=datetime.time(16, 5, tzinfo=est), days=(0,1,2,3,4), chat_id=cfg.get_chat_id(), data=app_data)
 
         # 3. 자정 청소 (core)
@@ -234,3 +231,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
