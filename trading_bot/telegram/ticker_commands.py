@@ -25,8 +25,13 @@ def register(app, bot):
     app.add_handler(CommandHandler("ticker_remove", _make_ticker_remove(bot)))
     app.add_handler(CommandHandler("ticker_list", _make_ticker_list(bot)))
     app.add_handler(CommandHandler("ticker", _make_ticker_menu(bot)))
-    # TSEL: 접두사로 시작하는 콜백만 캐치 (upstream TICKER: 와 충돌 방지)
-    app.add_handler(CallbackQueryHandler(_make_ticker_callback(bot), pattern=r"^TSEL:"))
+
+    # TSEL: 접두사 콜백 핸들러를 group=-1로 등록하여 upstream의 generic
+    # CallbackQueryHandler(모든 콜백 캐치)보다 먼저 실행되도록 함
+    app.add_handler(
+        CallbackQueryHandler(_make_ticker_callback(bot), pattern=r"^TSEL:"),
+        group=-1
+    )
 
 
 # ==========================================================
@@ -95,6 +100,8 @@ def _make_ticker_menu(bot):
 
 
 def _make_ticker_callback(bot):
+    from telegram.ext import ApplicationHandlerStop
+
     async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
@@ -120,27 +127,29 @@ def _make_ticker_callback(bot):
                 pass  # 같은 내용이면 무시
 
         elif action == "CONFIRM":
-            if not selected:
+            if selected:
+                new_list = sorted(selected)
+                bot.cfg.set_active_tickers(new_list)
+                _toggle_state.pop(chat_id, None)
+                await query.edit_message_text(
+                    f"✅ <b>운용 종목 변경 완료</b>\n\n"
+                    f"▫️ 활성 종목: <b>{', '.join(new_list)}</b>\n\n"
+                    f"💡 <code>/sync</code>로 확인하세요.",
+                    parse_mode='HTML'
+                )
+            else:
                 await query.edit_message_text(
                     "❌ <b>최소 1개 이상의 종목을 선택해야 합니다.</b>",
                     parse_mode='HTML'
                 )
-                return
-
-            new_list = sorted(selected)
-            bot.cfg.set_active_tickers(new_list)
-            _toggle_state.pop(chat_id, None)
-
-            await query.edit_message_text(
-                f"✅ <b>운용 종목 변경 완료</b>\n\n"
-                f"▫️ 활성 종목: <b>{', '.join(new_list)}</b>\n\n"
-                f"💡 <code>/sync</code>로 확인하세요.",
-                parse_mode='HTML'
-            )
 
         elif action == "CANCEL":
             _toggle_state.pop(chat_id, None)
             await query.edit_message_text("🚫 운용 종목 변경이 취소되었습니다.")
+
+        # upstream의 generic CallbackQueryHandler(group=0)가 같은 콜백을
+        # 중복 처리하지 않도록 전파 중단
+        raise ApplicationHandlerStop
 
     return on_callback
 
