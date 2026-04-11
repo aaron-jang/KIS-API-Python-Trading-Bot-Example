@@ -229,6 +229,14 @@ docs/                           # 문서
 | `/reset` | 비상 해제 | - 매매 잠금(REG/SNIPER) 강제 해제<br>- 리버스 모드 강제 탈출<br>- 장부 초기화 (본장부 + 에스크로 + 큐 삼위일체 소각)<br>- 인라인 버튼으로 종목 선택 → 확인 단계 필요 (오작동 방지) |
 | `/add_q` | V-REV 큐 수동 추가 | - V-REV 엔진의 LIFO 큐에 수동으로 매수 기록 추가<br>- 양식: `/add_q SOXL 2026-04-06 20 52.16`<br>- 기존 보유분을 V-REV 큐에 수동 등록할 때 사용 |
 
+### 티커 프로필 관리 (신규 종목 등록)
+
+| 명령어 | 기능 | 상세 |
+|--------|------|------|
+| `/ticker_add` | 신규 티커 등록 | - 양식: `/ticker_add TICKER BASE REVERSE_EXIT TRAILING_STOP`<br>- 예시: `/ticker_add UPRO SPY -18 1.2`<br>- yfinance로 티커/기초자산 실존 검증<br>- 기초자산 매핑, 리버스 탈출 수익률(%), 트레일링 스탑(%) 설정<br>- 시드/분할/목표는 `/seed`, `/settlement`로 별도 설정 |
+| `/ticker_remove` | 티커 프로필 삭제 | - 양식: `/ticker_remove TICKER`<br>- 예시: `/ticker_remove UPRO` |
+| `/ticker_list` | 등록된 티커 목록 | - 현재 프로필에 등록된 모든 티커 표시<br>- 기초자산, 리버스 탈출, 트레일링 스탑 정보 포함 |
+
 ---
 
 ## 테스트

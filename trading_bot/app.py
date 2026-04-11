@@ -192,6 +192,10 @@ def run():
     app.add_handler(CallbackQueryHandler(bot.handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
 
+    # 티커 프로필 관리 명령어 (독립 모듈, upstream 충돌 방지)
+    from trading_bot.telegram.ticker_commands import register as register_ticker_cmds
+    register_ticker_cmds(app, bot)
+
     # 텔레그램 / 입력 시 자동완성 메뉴 등록
     async def post_init(application):
         from telegram import BotCommand
@@ -207,6 +211,9 @@ def run():
             BotCommand("version", "버전 및 업데이트 내역"),
             BotCommand("reset", "비상 해제 메뉴"),
             BotCommand("add_q", "V-REV 큐 수동 추가"),
+            BotCommand("ticker_add", "신규 티커 프로필 등록"),
+            BotCommand("ticker_remove", "티커 프로필 삭제"),
+            BotCommand("ticker_list", "등록된 티커 프로필 목록"),
         ])
     app.post_init = post_init
 
