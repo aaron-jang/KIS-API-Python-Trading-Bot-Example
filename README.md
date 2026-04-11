@@ -219,7 +219,7 @@ docs/                           # 문서
 |--------|------|------|
 | `/settlement` | 분할/복리/버전 설정 | - 종목별 분할 수 변경 (20/40/60)<br>- 목표 수익률(%) 설정 (SOXL 12%, TQQQ 10% 등)<br>- 복리율(%) 조절 (졸업 수익의 몇 %를 시드에 재투자)<br>- 매매 엔진 버전 전환 (V14 ↔ V_REV)<br>- 실시간 변동성 지표(HV/VXN) 연산 결과 표시 |
 | `/seed` | 시드머니 관리 | - 종목별 운용 시드머니 금액 조절<br>- 추가(+$100), 감소(-$100), 고정(직접 입력) 3가지 방식<br>- 현재 설정된 시드 금액 실시간 표시 |
-| `/ticker` | 운용 종목 선택 | - SOXL 전용 / TQQQ 전용 / SOXL+TQQQ 통합 운용 모드 전환<br>- 인라인 버튼으로 원터치 전환 |
+| `/ticker` | 운용 종목 선택 | - 프로필에 등록된 모든 티커를 토글 버튼으로 다중 선택<br>- ✅/⬜ 클릭으로 선택/해제, ✔️ 확정으로 저장<br>- 기존 활성 종목을 초기 선택 상태로 로드 |
 | `/mode` | 스나이퍼 ON/OFF | - 종목별 상방 익절 스나이퍼 기능을 개별적으로 활성화/비활성화<br>- 현재 ON/OFF 상태 표시 |
 
 ### 긴급
@@ -236,7 +236,6 @@ docs/                           # 문서
 | `/ticker_add` | 신규 티커 등록 | - 양식: `/ticker_add TICKER BASE REVERSE_EXIT TRAILING_STOP`<br>- 예시: `/ticker_add UPRO SPY -18 1.2`<br>- yfinance로 티커/기초자산 실존 검증<br>- 기초자산 매핑, 리버스 탈출 수익률(%), 트레일링 스탑(%) 설정<br>- 시드/분할/목표는 `/seed`, `/settlement`로 별도 설정 |
 | `/ticker_remove` | 티커 프로필 삭제 | - 양식: `/ticker_remove TICKER`<br>- 예시: `/ticker_remove UPRO` |
 | `/ticker_list` | 등록된 티커 목록 | - 현재 프로필에 등록된 모든 티커 표시<br>- 활성 종목은 ✅로 표시<br>- 기초자산, 리버스 탈출, 트레일링 스탑 정보 포함 |
-| `/ticker_use` | 운용 종목 변경 | - 양식: `/ticker_use TICKER1 TICKER2 ...`<br>- 예시: `/ticker_use SOXL TQQQ UPRO`<br>- 프로필에 등록된 티커만 선택 가능<br>- 기본 `/ticker` 메뉴(SOXL/TQQQ 버튼)를 대체 |
 
 ---
 

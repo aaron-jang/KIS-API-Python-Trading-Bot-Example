@@ -182,7 +182,7 @@ def run():
         ("sync", bot.cmd_sync),
         ("settlement", bot.cmd_settlement),
         ("seed", bot.cmd_seed),
-        ("ticker", bot.cmd_ticker),
+        # ("ticker", bot.cmd_ticker),  # 토글 UI로 덮어씀 — ticker_commands.py에서 등록
         ("mode", bot.cmd_mode),
         ("reset", bot.cmd_reset),
         ("version", bot.cmd_version),
@@ -214,7 +214,6 @@ def run():
             BotCommand("ticker_add", "신규 티커 프로필 등록"),
             BotCommand("ticker_remove", "티커 프로필 삭제"),
             BotCommand("ticker_list", "등록된 티커 프로필 목록"),
-            BotCommand("ticker_use", "운용 종목 변경 (프로필 기반)"),
         ])
     app.post_init = post_init
 

@@ -5,30 +5,149 @@ upstream의 commands.py를 건드리지 않고 독립 모듈로 작성하여
 upstream 머지 시 충돌을 방지합니다.
 """
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from trading_bot.storage import ticker_profiles as tp
 
 logger = logging.getLogger(__name__)
 
+# 채팅방별 토글 선택 임시 상태 저장소
+# { chat_id: set[str] } — 현재 선택된 티커 집합
+_toggle_state: dict[int, set] = {}
+
 
 def register(app, bot):
-    """
-    app.add_handler()로 등록할 수 있는 핸들러를 app에 추가.
-
-    사용법:
-        from trading_bot.telegram.ticker_commands import register
-        register(app, bot)
-    """
-    from telegram.ext import CommandHandler
+    """app에 핸들러 등록"""
+    from telegram.ext import CommandHandler, CallbackQueryHandler
 
     app.add_handler(CommandHandler("ticker_add", _make_ticker_add(bot)))
     app.add_handler(CommandHandler("ticker_remove", _make_ticker_remove(bot)))
     app.add_handler(CommandHandler("ticker_list", _make_ticker_list(bot)))
-    app.add_handler(CommandHandler("ticker_use", _make_ticker_use(bot)))
+    app.add_handler(CommandHandler("ticker", _make_ticker_menu(bot)))
+    # TSEL: 접두사로 시작하는 콜백만 캐치 (upstream TICKER: 와 충돌 방지)
+    app.add_handler(CallbackQueryHandler(_make_ticker_callback(bot), pattern=r"^TSEL:"))
 
 
+# ==========================================================
+# /ticker — 토글 기반 다중 선택 메뉴
+# ==========================================================
+def _build_menu(selected: set, profiled: list) -> tuple:
+    """
+    토글 메뉴 메시지와 InlineKeyboard 생성.
+
+    Args:
+        selected: 현재 선택된 티커 집합
+        profiled: 프로필에 등록된 모든 티커 리스트
+
+    Returns:
+        (message_text, InlineKeyboardMarkup)
+    """
+    lines = ["📋 <b>[ 운용 종목 선택 ]</b>\n"]
+    lines.append("각 티커를 눌러서 선택/해제한 후 <b>✔️ 확정</b>을 누르세요.\n")
+
+    if selected:
+        lines.append(f"🎯 <b>선택됨:</b> {', '.join(sorted(selected))}")
+    else:
+        lines.append("⚠️ <b>선택된 종목이 없습니다</b>")
+
+    keyboard = []
+    for t in profiled:
+        profile = tp.get_profile(t)
+        marker = "✅" if t in selected else "⬜"
+        keyboard.append([InlineKeyboardButton(
+            f"{marker} {t} ({profile['base_ticker']})",
+            callback_data=f"TSEL:TOGGLE:{t}"
+        )])
+
+    keyboard.append([
+        InlineKeyboardButton("✔️ 확정", callback_data="TSEL:CONFIRM"),
+        InlineKeyboardButton("❌ 취소", callback_data="TSEL:CANCEL"),
+    ])
+
+    return "\n".join(lines), InlineKeyboardMarkup(keyboard)
+
+
+def _make_ticker_menu(bot):
+    async def cmd_ticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not bot._is_admin(update):
+            return
+
+        chat_id = update.effective_chat.id
+        profiled = sorted(tp.list_tickers())
+
+        if not profiled:
+            await update.message.reply_text(
+                "⚠️ 등록된 티커가 없습니다.\n\n"
+                "먼저 <code>/ticker_add</code>로 티커를 등록하세요.",
+                parse_mode='HTML'
+            )
+            return
+
+        # 현재 활성 종목을 초기 선택 상태로 로드
+        current = set(bot.cfg.get_active_tickers())
+        _toggle_state[chat_id] = current & set(profiled)  # 프로필에 있는 것만
+
+        msg, markup = _build_menu(_toggle_state[chat_id], profiled)
+        await update.message.reply_text(msg, reply_markup=markup, parse_mode='HTML')
+
+    return cmd_ticker
+
+
+def _make_ticker_callback(bot):
+    async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        data = query.data.split(":")
+        action = data[1] if len(data) > 1 else ""
+
+        profiled = sorted(tp.list_tickers())
+        selected = _toggle_state.setdefault(chat_id, set(bot.cfg.get_active_tickers()) & set(profiled))
+
+        if action == "TOGGLE":
+            ticker = data[2]
+            if ticker in selected:
+                selected.remove(ticker)
+            else:
+                selected.add(ticker)
+
+            msg, markup = _build_menu(selected, profiled)
+            try:
+                await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
+            except Exception:
+                pass  # 같은 내용이면 무시
+
+        elif action == "CONFIRM":
+            if not selected:
+                await query.edit_message_text(
+                    "❌ <b>최소 1개 이상의 종목을 선택해야 합니다.</b>",
+                    parse_mode='HTML'
+                )
+                return
+
+            new_list = sorted(selected)
+            bot.cfg.set_active_tickers(new_list)
+            _toggle_state.pop(chat_id, None)
+
+            await query.edit_message_text(
+                f"✅ <b>운용 종목 변경 완료</b>\n\n"
+                f"▫️ 활성 종목: <b>{', '.join(new_list)}</b>\n\n"
+                f"💡 <code>/sync</code>로 확인하세요.",
+                parse_mode='HTML'
+            )
+
+        elif action == "CANCEL":
+            _toggle_state.pop(chat_id, None)
+            await query.edit_message_text("🚫 운용 종목 변경이 취소되었습니다.")
+
+    return on_callback
+
+
+# ==========================================================
+# /ticker_add — 신규 티커 등록 (yfinance 검증)
+# ==========================================================
 def _make_ticker_add(bot):
     async def cmd_ticker_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not bot._is_admin(update):
@@ -79,7 +198,7 @@ def _make_ticker_add(bot):
                 f"▫️ 기초자산: <b>{base_ticker}</b>\n"
                 f"▫️ 리버스 탈출: <b>{reverse_exit}%</b>\n"
                 f"▫️ 트레일링 스탑: <b>{trailing_stop}%</b>\n\n"
-                f"💡 <code>/ticker</code> 메뉴에서 운용 종목으로 활성화하세요.\n"
+                f"💡 <code>/ticker</code>에서 운용 종목으로 활성화하세요.\n"
                 f"💡 <code>/seed</code>, <code>/settlement</code>에서 추가 설정 가능합니다."
             )
         else:
@@ -90,6 +209,9 @@ def _make_ticker_add(bot):
     return cmd_ticker_add
 
 
+# ==========================================================
+# /ticker_remove — 프로필 삭제
+# ==========================================================
 def _make_ticker_remove(bot):
     async def cmd_ticker_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not bot._is_admin(update):
@@ -106,9 +228,14 @@ def _make_ticker_remove(bot):
 
         ticker = args[0].upper()
         if tp.remove_ticker(ticker):
+            # 활성 종목에서도 제거
+            active = bot.cfg.get_active_tickers()
+            if ticker in active:
+                new_active = [t for t in active if t != ticker]
+                bot.cfg.set_active_tickers(new_active)
+
             await update.message.reply_text(
-                f"✅ <b>{ticker}</b> 프로필 삭제 완료\n\n"
-                f"⚠️ <code>/ticker</code> 활성 종목 목록에서도 제거하세요.",
+                f"✅ <b>{ticker}</b> 프로필 삭제 완료",
                 parse_mode='HTML'
             )
         else:
@@ -120,6 +247,9 @@ def _make_ticker_remove(bot):
     return cmd_ticker_remove
 
 
+# ==========================================================
+# /ticker_list — 등록 목록 (활성 상태 표시)
+# ==========================================================
 def _make_ticker_list(bot):
     async def cmd_ticker_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not bot._is_admin(update):
@@ -142,53 +272,8 @@ def _make_ticker_list(bot):
                 f"트레일링 스탑: {profile['trailing_stop']}%"
             )
 
-        lines.append("\n💡 운용 종목 변경: <code>/ticker_use TICKER1 TICKER2 ...</code>")
-        lines.append("   예: <code>/ticker_use SOXL TQQQ UPRO</code>")
+        lines.append("\n💡 운용 종목 변경: <code>/ticker</code>")
 
         await update.message.reply_text("\n".join(lines), parse_mode='HTML')
 
     return cmd_ticker_list
-
-
-def _make_ticker_use(bot):
-    async def cmd_ticker_use(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not bot._is_admin(update):
-            return
-
-        args = context.args
-        if not args:
-            active = bot.cfg.get_active_tickers()
-            await update.message.reply_text(
-                f"📌 <b>현재 운용 종목:</b> {', '.join(active) if active else '(없음)'}\n\n"
-                f"사용법:\n"
-                f"<code>/ticker_use TICKER1 [TICKER2 ...]</code>\n\n"
-                f"예시:\n"
-                f"<code>/ticker_use SOXL</code>\n"
-                f"<code>/ticker_use SOXL TQQQ</code>\n"
-                f"<code>/ticker_use UPRO</code>",
-                parse_mode='HTML'
-            )
-            return
-
-        new_tickers = [t.upper() for t in args]
-
-        # 모든 티커가 프로필에 등록되어 있는지 확인
-        registered = set(tp.list_tickers())
-        unknown = [t for t in new_tickers if t not in registered]
-        if unknown:
-            await update.message.reply_text(
-                f"❌ 다음 티커는 프로필에 등록되지 않았습니다: <b>{', '.join(unknown)}</b>\n\n"
-                f"먼저 <code>/ticker_add</code>로 등록하세요.",
-                parse_mode='HTML'
-            )
-            return
-
-        bot.cfg.set_active_tickers(new_tickers)
-        await update.message.reply_text(
-            f"✅ <b>운용 종목 변경 완료</b>\n\n"
-            f"▫️ 활성 종목: <b>{', '.join(new_tickers)}</b>\n\n"
-            f"💡 <code>/sync</code>로 확인하세요.",
-            parse_mode='HTML'
-        )
-
-    return cmd_ticker_use
