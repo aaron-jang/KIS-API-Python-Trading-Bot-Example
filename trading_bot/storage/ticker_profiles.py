@@ -120,8 +120,43 @@ def get_base_map() -> dict:
     return {t: p["base_ticker"] for t, p in profiles.items()}
 
 
-def add_ticker(ticker: str, base_ticker: str, reverse_exit: float, trailing_stop: float) -> None:
-    """신규 티커를 프로필에 등록"""
+def validate_ticker(ticker: str) -> bool:
+    """
+    yfinance로 티커 실존 여부 확인.
+    history가 비어있지 않으면 유효한 티커.
+    진짜 네트워크 오류(requests/connection 예외)는 통과 처리.
+    """
+    try:
+        import yfinance as yf
+        # history()가 가장 확실한 검증 방법
+        # 유효한 티커면 데이터를 반환, 없는 티커면 빈 DataFrame
+        hist = yf.Ticker(ticker).history(period="5d", timeout=10)
+        return not hist.empty
+    except (ConnectionError, TimeoutError):
+        # 순수 네트워크 오류만 통과
+        return True
+    except Exception:
+        # 기타 예외(티커 없음 등)는 실패로 간주
+        return False
+
+
+def add_ticker(ticker: str, base_ticker: str, reverse_exit: float,
+               trailing_stop: float, validate: bool = True) -> tuple[bool, str]:
+    """
+    신규 티커를 프로필에 등록.
+
+    Args:
+        validate: yfinance로 실존 검증 여부
+
+    Returns:
+        (success, message)
+    """
+    if validate:
+        if not validate_ticker(ticker):
+            return False, f"❌ '{ticker}'는 yfinance에서 유효하지 않은 티커입니다."
+        if not validate_ticker(base_ticker):
+            return False, f"❌ 기초자산 '{base_ticker}'는 yfinance에서 유효하지 않은 티커입니다."
+
     profiles = _load()
     profiles[ticker] = {
         "base_ticker": base_ticker,
@@ -129,6 +164,7 @@ def add_ticker(ticker: str, base_ticker: str, reverse_exit: float, trailing_stop
         "trailing_stop": float(trailing_stop),
     }
     _save(profiles)
+    return True, f"✅ {ticker} ({base_ticker}) 등록 완료"
 
 
 def remove_ticker(ticker: str) -> bool:
