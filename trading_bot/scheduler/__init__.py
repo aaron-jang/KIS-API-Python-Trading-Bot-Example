@@ -16,7 +16,6 @@ from trading_bot.scheduler.trade_jobs import (
     scheduled_sniper_monitor,
     scheduled_vwap_trade,
     scheduled_vwap_init_and_cancel,
-    scheduled_emergency_liquidation,
     scheduled_after_market_lottery,
 )
 
@@ -26,6 +25,5 @@ __all__ = [
     "scheduled_self_cleaning", "scheduled_token_check", "scheduled_force_reset",
     "scheduled_auto_sync_summer", "scheduled_auto_sync_winter",
     "scheduled_regular_trade", "scheduled_sniper_monitor", "scheduled_vwap_trade",
-    "scheduled_vwap_init_and_cancel", "scheduled_emergency_liquidation",
-    "scheduled_after_market_lottery",
+    "scheduled_vwap_init_and_cancel", "scheduled_after_market_lottery",
 ]

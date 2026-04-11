@@ -1,7 +1,7 @@
 # ==========================================================
 # [trading_bot/app.py]
 # 애플리케이션 부트스트래핑 및 스케줄러 등록
-# 💡 [V24.15] 2대 코어 체제 확립, V_VWAP 영구 소각
+# 💡 [V24.20] 듀얼 레퍼런싱(SOXX/SOXL) 인프라 및 스냅샷 파이프라인 증설
 # ==========================================================
 
 import os
@@ -35,18 +35,27 @@ from trading_bot.scheduler.trade_jobs import (
     scheduled_sniper_monitor,
     scheduled_vwap_trade,
     scheduled_vwap_init_and_cancel,
-    scheduled_emergency_liquidation,
     scheduled_after_market_lottery,
 )
+
+# 듀얼 레퍼런싱: 기초자산(Base) ↔ 파생상품(Exec) 1:1 매핑
+TICKER_BASE_MAP = {
+    "SOXL": "SOXX",
+    "TQQQ": "QQQ",
+    "TSLL": "TSLA",
+    "FNGU": "FNGS",
+    "BULZ": "FNGS",
+}
 
 
 async def scheduled_volatility_scan(context):
     """
     10:20 EST (정규장 개장 50분 후) 격발.
-    대상 종목들의 HV와 당일 VXN을 연산하여 터미널 메인 화면에 1-Tier 브리핑 덤프
+    기초자산 기준으로 변동성 지표를 계산하여 브리핑.
     """
     app_data = context.job.data
     cfg = app_data['cfg']
+    base_map = app_data.get('base_map', TICKER_BASE_MAP)
 
     print("\n" + "=" * 60)
     print("📈 [자율주행 변동성 스캔 완료] (10:20 EST 스냅샷)")
@@ -64,15 +73,19 @@ async def scheduled_volatility_scan(context):
         vol_engine = VolatilityEngine()
 
         for ticker in active_tickers:
+            target_base = base_map.get(ticker, ticker)
             try:
-                weight_data = await asyncio.to_thread(vol_engine.calculate_weight, ticker)
+                weight_data = await asyncio.to_thread(vol_engine.calculate_weight, target_base)
                 real_weight = float(weight_data.get('weight', 1.0) if isinstance(weight_data, dict) else weight_data)
             except Exception as e:
                 logging.warning(f"[{ticker}] 변동성 지표 산출 실패. 폴백 적용: {e}")
                 real_weight = 0.85 if ticker == "TQQQ" else 1.15
 
             status_text = "OFF 권장" if real_weight <= 1.0 else "ON 권장"
-            briefing_lines.append(f"{ticker}: {real_weight:.2f} ({status_text})")
+            if ticker != target_base:
+                briefing_lines.append(f"{ticker}({target_base}): {real_weight:.2f} ({status_text})")
+            else:
+                briefing_lines.append(f"{ticker}: {real_weight:.2f} ({status_text})")
 
         print(f"📊 [자율주행 지표] {' | '.join(briefing_lines)} (상세 게이지: /mode)")
     print("=" * 60 + "\n")
@@ -141,7 +154,6 @@ def run():
         strategy_rev=strategy_rev
     )
 
-    # 💡 텔레그램 네트워크 지연 방어 + 커넥션 풀 확장 + misfire 120초 허용
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
@@ -154,7 +166,7 @@ def run():
     )
     app.job_queue.scheduler.configure(job_defaults={'misfire_grace_time': 120})
 
-    # 텔레그램 타임아웃 자동 재시도 핸들러
+    # 텔레그램 타임아웃/네트워크 에러 핸들러
     async def error_handler(update, context):
         import telegram.error
         if isinstance(context.error, (telegram.error.TimedOut, telegram.error.NetworkError)):
@@ -207,7 +219,8 @@ def run():
             'queue_ledger': queue_ledger,
             'strategy_rev': strategy_rev,
             'bot': bot,
-            'tx_lock': tx_lock
+            'tx_lock': tx_lock,
+            'base_map': TICKER_BASE_MAP,
         }
         est = pytz.timezone('US/Eastern')
 
@@ -232,8 +245,6 @@ def run():
                        chat_id=cfg.get_chat_id(), data=app_data)
         jq.run_custom(scheduled_vwap_trade, job_kwargs={"trigger": "cron", "second": "40"},
                        chat_id=cfg.get_chat_id(), data=app_data)
-
-        jq.run_daily(scheduled_emergency_liquidation, time=datetime.time(15, 59, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
         jq.run_daily(scheduled_after_market_lottery, time=datetime.time(16, 5, tzinfo=est), days=(1,2,3,4,5), chat_id=cfg.get_chat_id(), data=app_data)
 
