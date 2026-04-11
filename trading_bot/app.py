@@ -214,6 +214,7 @@ def run():
             BotCommand("ticker_add", "신규 티커 프로필 등록"),
             BotCommand("ticker_remove", "티커 프로필 삭제"),
             BotCommand("ticker_list", "등록된 티커 프로필 목록"),
+            BotCommand("ticker_use", "운용 종목 변경 (프로필 기반)"),
         ])
     app.post_init = post_init
 

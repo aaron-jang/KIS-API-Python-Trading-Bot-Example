@@ -235,7 +235,8 @@ docs/                           # 문서
 |--------|------|------|
 | `/ticker_add` | 신규 티커 등록 | - 양식: `/ticker_add TICKER BASE REVERSE_EXIT TRAILING_STOP`<br>- 예시: `/ticker_add UPRO SPY -18 1.2`<br>- yfinance로 티커/기초자산 실존 검증<br>- 기초자산 매핑, 리버스 탈출 수익률(%), 트레일링 스탑(%) 설정<br>- 시드/분할/목표는 `/seed`, `/settlement`로 별도 설정 |
 | `/ticker_remove` | 티커 프로필 삭제 | - 양식: `/ticker_remove TICKER`<br>- 예시: `/ticker_remove UPRO` |
-| `/ticker_list` | 등록된 티커 목록 | - 현재 프로필에 등록된 모든 티커 표시<br>- 기초자산, 리버스 탈출, 트레일링 스탑 정보 포함 |
+| `/ticker_list` | 등록된 티커 목록 | - 현재 프로필에 등록된 모든 티커 표시<br>- 활성 종목은 ✅로 표시<br>- 기초자산, 리버스 탈출, 트레일링 스탑 정보 포함 |
+| `/ticker_use` | 운용 종목 변경 | - 양식: `/ticker_use TICKER1 TICKER2 ...`<br>- 예시: `/ticker_use SOXL TQQQ UPRO`<br>- 프로필에 등록된 티커만 선택 가능<br>- 기본 `/ticker` 메뉴(SOXL/TQQQ 버튼)를 대체 |
 
 ---
 
