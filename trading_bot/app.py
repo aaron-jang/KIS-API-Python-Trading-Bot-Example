@@ -39,13 +39,13 @@ from trading_bot.scheduler.trade_jobs import (
 )
 
 # 듀얼 레퍼런싱: 기초자산(Base) ↔ 파생상품(Exec) 1:1 매핑
-TICKER_BASE_MAP = {
-    "SOXL": "SOXX",
-    "TQQQ": "QQQ",
-    "TSLL": "TSLA",
-    "FNGU": "FNGS",
-    "BULZ": "FNGS",
-}
+# data/ticker_profiles.json에서 동적 로드 (사용자 등록 가능)
+from trading_bot.storage import ticker_profiles as _ticker_profiles
+
+
+def get_ticker_base_map():
+    """런타임에 최신 프로필을 읽어 base_map 반환"""
+    return _ticker_profiles.get_base_map()
 
 
 async def scheduled_volatility_scan(context):
@@ -55,7 +55,7 @@ async def scheduled_volatility_scan(context):
     """
     app_data = context.job.data
     cfg = app_data['cfg']
-    base_map = app_data.get('base_map', TICKER_BASE_MAP)
+    base_map = app_data.get('base_map') or get_ticker_base_map()
 
     print("\n" + "=" * 60)
     print("📈 [자율주행 변동성 스캔 완료] (10:20 EST 스냅샷)")
@@ -220,7 +220,7 @@ def run():
             'strategy_rev': strategy_rev,
             'bot': bot,
             'tx_lock': tx_lock,
-            'base_map': TICKER_BASE_MAP,
+            'base_map': get_ticker_base_map(),
         }
         est = pytz.timezone('US/Eastern')
 

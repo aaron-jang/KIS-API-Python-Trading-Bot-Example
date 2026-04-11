@@ -109,7 +109,8 @@ class V14Strategy:
                 rev_day = 1 
                 
                 current_return = (current_price - avg_price) / avg_price * 100.0 if avg_price > 0 else 0.0
-                default_exit = -15.0 if ticker == "TQQQ" else -20.0
+                from trading_bot.storage import ticker_profiles as _tp
+                default_exit = _tp.get_reverse_exit(ticker)
                 
                 if current_return >= default_exit:
                     exit_target = 0.0
