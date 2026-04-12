@@ -3,10 +3,10 @@
 [![CI](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-jang/KIS-API-Python-Trading-Bot-Example/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/aaron-jang/c51777029ca0a51c869a27ed671e9dfd/raw/test-results.json)
-![Version](https://img.shields.io/badge/version-V24.16-orange)
+![Version](https://img.shields.io/badge/version-V25.14.1-orange)
 ![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey)
 
-> KIS Open API 기반 미국 주식 자동매매 봇 (V24.16 초경량 2대 코어 아키텍처)
+> KIS Open API 기반 미국 주식 자동매매 봇 (V25.14.1 초경량 2대 코어 아키텍처)
 
 한국투자증권(KIS) Open API를 활용하여 미국 주식 자동매매 시스템을 구축해보는 파이썬 예제 코드입니다. 증권사 API 통신, 스케줄러 자동화, 텔레그램 봇 제어 등을 학습하기 위한 기술적 레퍼런스로 작성되었습니다.
 
@@ -169,10 +169,11 @@ trading_bot/
 ├── broker/                     # 외부 API 통신
 │   └── kis_api.py              # KIS REST API, 토큰 관리, 호가 스캔
 │
-├── strategy/                   # 매매 전략 (2대 코어)
+├── strategy/                   # 매매 전략 (2대 코어 + AVWAP 하이브리드)
 │   ├── infinite.py             # 중앙 라우터 (V14/V-REV 분기)
 │   ├── v14.py                  # V14 무한매수법 플러그인
 │   ├── reversion.py            # V-REV 역추세 엔진 (VWAP 내장)
+│   ├── v_avwap.py              # AVWAP 듀얼 레퍼런싱 스나이퍼
 │   ├── queue_ledger.py         # LIFO 큐 기반 비파괴 장부
 │   └── volatility.py           # ATR/VXN 변동성 계산
 │
@@ -182,7 +183,8 @@ trading_bot/
 │
 ├── telegram/                   # UI 계층
 │   ├── commands.py             # 텔레그램 커맨드 라우터
-│   └── views.py                # 메시지/이미지 렌더링
+│   ├── ticker_commands.py      # 티커 프로필 관리 명령어
+│   └���─ views.py                # 메시지/이미지 렌더링
 │
 ├── models/                     # 도메인 모델 (순수 데이터)
 │   ├── order.py                # Order, OrderSide, OrderType
@@ -193,6 +195,7 @@ trading_bot/
     ├── file_utils.py           # 원자적 JSON/텍스트 I/O
     ├── ledger_store.py         # 장부 CRUD + 보유현황 계산
     ├── lock_manager.py         # 매매 잠금 + 에스크로
+    ├── ticker_profiles.py      # 티커 프로필 관리 (등록/삭제/조회)
     └── trading_config.py       # 종목별 설정 관리
 
 tests/                          # 테스트 (197개)
