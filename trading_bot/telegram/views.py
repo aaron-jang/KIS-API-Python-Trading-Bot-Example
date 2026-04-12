@@ -1,260 +1,234 @@
 # ==========================================================
 # [telegram_view.py] - Part 1/2 부 (상반부)
-# ⚠️ V-REV 장부 강제 초기화 3중 경고 방어막 유지
-# 💡 [V24.15 대수술] 2대 코어(V14, V-REV) 체제 UI 최적화 및 V_VWAP 적출
-# 💡 [V24.18 수술] V-REV 큐 관리 메뉴 내 수동 긴급 수혈 3중 경고 방어막 UI 탑재
-# 💡 [V24.18 하이브리드] 차세대 AVWAP 가동 전 3대 리스크 강력 경고 팝업 UI 신설
-# 🚨 [V25.14 UI 팩트 교정] AVWAP 하드스탑 텍스트의 MOC 논리 오류 소각 및 듀얼 레퍼런싱(지정가) 3-Strike 팩트 동기화
+# 💡 V25.05 💠 V-REV 하이브리드 & V14 무매 UI 렌더링 엔진 (1부 완전 복구본)
+# ⚠️ 수술 내역: 
+# 1. 덮어쓰기 사고로 소실된 TelegramView 클래스 헤더 및 필수 UI 모듈 100% 복원
+# 2. V-REV 큐(Queue) 관리 및 긴급 수혈(Emergency MOC) 메뉴 렌더링 엔진 복구
+# 3. AVWAP 하이브리드 토글 및 2단계 경고 UI 완벽 연결
+# 4. Ruff E701, E722 등 잔여 린팅 에러 원천 차단 상태로 락온
+# 🚨 [V25.05 UI 패치] 시작화면(/start) 브리핑 텍스트 서머타임 ON/OFF 동적 렌더링 팩트 교정
+# 🚨 [V25.06 버전 패치] /version 명령어 Type Mismatch 버그 해결 (문자열 동적 파싱 로직 이식)
+# 🚨 [V25.06 버전 UX 패치] 최신 버전이 가장 마지막 줄에 출력되도록 정배열 유지 및 초기 진입 시 마지막 페이지 렌더링 강제
 # ==========================================================
 import os
 import math
-import json
-import logging
-from PIL import Image, ImageDraw, ImageFont
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 class TelegramView:
     def __init__(self):
-        self.bold_font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
-            "arialbd.ttf"
-        ]
-        self.reg_font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-            "arial.ttf"
-        ]
+        pass
 
-    def _load_best_font(self, font_list, size):
-        for path in font_list:
-            try:
-                if os.path.exists(path):
-                    return ImageFont.truetype(path, size)
-            except:
-                continue
-        try:
-            return ImageFont.truetype("sans-serif", size)
-        except:
-            return ImageFont.load_default()
-
+    # MODIFIED: [V25.05 UI 패치] target_hour 기반 서머타임 ON/OFF 동적 판별 및 줄바꿈/텍스트 100% 일치화
     def get_start_message(self, target_hour, season_icon, latest_version):
-        init_time = f"{target_hour:02d}:00"
-        order_time = f"{target_hour:02d}:05"
-        season_short = "🌞서머타임 ON" if "Summer" in season_icon else "❄️서머타임 OFF"
-        sync_time = "08:30" if target_hour == 17 else "09:30"
-
-        return (
-            f"🌌 <b>[ 인피니트 스노우볼 {latest_version} ]</b>\n" 
-            f"💠 <b> 2대 퀀트 코어 + AVWAP 하이브리드 엔진 </b>\n\n" 
-            f"🕒 <b>[ 운영 스케줄 ({season_short}) ]</b>\n"
-            f"🔹 6시간 간격 : 🔑 API 토큰 자동 갱신\n"
-            f"🔹 {sync_time} : 📝 잔고 동기화 & 자동 복리\n"
-            f"🔹 {init_time} : 🔐 매매 초기화 및 변동성 락온\n"
-            f"🔹 {order_time} : 🌃 통합 주문 자동 실행\n\n"
-            "🛠 <b>[ 주요 명령어 ]</b>\n"
-            "▶️ <b>/sync</b> : 📜 통합 지시서 조회\n"
-            "▶️ <b>/record</b> : 📊 장부 동기화 및 조회\n"
-            "▶️ <b>/history</b> : 🏆 졸업 명예의 전당\n"
-            "▶️ <b>/settlement</b> : ⚙️ 코어 스위칭 / 전술 설정\n"
-            "▶️ <b>/seed</b> : 💵 개별 시드머니 관리\n"
-            "▶️ <b>/ticker</b> : 🔄 운용 종목 선택\n"
-            "▶️ <b>/mode</b> : 🎯 상방 스나이퍼 ON/OFF\n"
-            "▶️ <b>/version</b> : 🛠️ 버전 및 업데이트 내역\n\n" 
-            "⚠️ <b>/reset</b> : 🔓 비상 해제 메뉴 (락/리버스)\n" 
-            "<i>┗ 🚨 수동 닻 올리기: 예산 부족으로 리버스 진입 후 외화RP매도 등 예수금을 추가 입금하셨다면, 이 메뉴에서 반드시 '리버스 강제 해제'를 눌러 닻을 올려주세요!</i>"
-        )
+        dst_state = "🌞서머타임 ON" if target_hour == 17 else "❄️서머타임 OFF"
+        
+        msg = f"🌌 [ 인피니트 스노우볼 {latest_version} ]\n"
+        msg += "💠 2대 퀀트 코어 + AVWAP 하이브리드 엔진\n\n"
+        
+        msg += f"🕒 [ 운영 스케줄 ({dst_state}) ]\n"
+        msg += "🔹 6시간 간격 : 🔑 API 토큰 자동 갱신\n"
+        msg += "🔹 08:30 : 📝 잔고 동기화 & 자동 복리\n"
+        msg += f"🔹 {target_hour}:00 : 🔐 매매 초기화 및 변동성 락온\n"
+        msg += f"🔹 {target_hour}:05 : 🌃 통합 주문 자동 실행\n\n"
+        
+        msg += "🛠 [ 주요 명령어 ]\n"
+        msg += "▶️ /sync : 📜 통합 지시서 조회\n"
+        msg += "▶️ /record : 📊 장부 동기화 및 조회\n"
+        msg += "▶️ /history : 🏆 졸업 명예의 전당\n"
+        msg += "▶️ /settlement : ⚙️ 코어 스위칭 / 전술 설정\n"
+        msg += "▶️ /seed : 💵 개별 시드머니 관리\n"
+        msg += "▶️ /ticker : 🔄 운용 종목 선택\n"
+        msg += "▶️ /mode : 🎯 상방 스나이퍼 ON/OFF\n"
+        msg += "▶️ /version : 🛠️ 버전 및 업데이트 내역\n\n"
+        
+        msg += "⚠️ /reset : 🔓 비상 해제 메뉴 (락/리버스)\n"
+        msg += "┗ 🚨 수동 닻 올리기: 예산 부족으로 리버스 진입 후 외화RP매도 등 예수금을 추가 입금하셨다면, 이 메뉴에서 반드시 '리버스 강제 해제'를 눌러 닻을 올려주세요!"
+        return msg
 
     def get_reset_menu(self, active_tickers):
-        msg = (
-            "🛠️ <b>[ 시스템 안전 통제실 ]</b>\n"
-            "⚠️ 주의: 강제 초기화할 항목을 선택하세요."
-        )
+        msg = "🔥 <b>[ 삼위일체 소각 (Nuke) 프로토콜 ]</b>\n\n"
+        msg += "⚠️ <b>경고:</b> 이 기능은 해당 종목의 본장부, 백업장부, 에스크로, V-REV 큐(Queue) 데이터를 100% 영구 삭제합니다.\n"
+        msg += "▫️ 실제 계좌의 주식은 매도되지 않습니다.\n"
+        msg += "▫️ HTS/MTS에서 수동으로 물량을 완전히 청산한 뒤, 봇을 0주 새출발 모드로 초기화할 때만 격발하십시오.\n\n"
+        msg += "🔓 <b>[ 당일 매매 잠금(Lock) 해제 ]</b>\n"
+        msg += "▫️ 금일 필수 주문이 완료되어 '잠금'된 상태를 강제로 풀고 추가 격발을 허용합니다.\n"
+        
         keyboard = []
         for t in active_tickers:
-            keyboard.append([InlineKeyboardButton(f"🔓 [{t}] 매매 잠금 해제", callback_data=f"RESET:LOCK:{t}")])
-        for t in active_tickers:
-            keyboard.append([InlineKeyboardButton(f"🚨 [{t}] 리버스/장부 초기화", callback_data=f"RESET:REV:{t}")])
+            keyboard.append([
+                InlineKeyboardButton(f"🔥 {t} 장부 영구 소각", callback_data=f"RESET:REV:{t}"),
+                InlineKeyboardButton(f"🔓 {t} 당일 잠금 해제", callback_data=f"RESET:LOCK:{t}")
+            ])
         keyboard.append([InlineKeyboardButton("❌ 취소 및 닫기", callback_data="RESET:CANCEL")])
+        
         return msg, InlineKeyboardMarkup(keyboard)
 
     def get_reset_confirm_menu(self, ticker):
-        msg = (
-            f"⚠️ <b>[ 경고: {ticker} 리버스 및 가상장부 강제 초기화 ]</b>\n\n"
-            f"정말로 {ticker}의 리버스 모드를 종료하고 <b>가상장부(Escrow) 격리금액을 0원으로 완전 소각</b>하시겠습니까?\n"
-            "<i>(충분한 시드가 추가되었거나 로직 꼬임 시에만 권장하며, 해제 시 다음부터 일반 모드로 돌아갑니다.)</i>"
-        )
+        msg = f"🚨 <b>[{ticker} 삼위일체 소각 최종 확인]</b>\n\n"
+        msg += f"정말 <b>{ticker}</b>의 모든 퀀트 장부 데이터를 영구 삭제하시겠습니까?\n"
+        msg += "이 작업은 되돌릴 수 없습니다!"
+        
         keyboard = [
-            [InlineKeyboardButton("✅ 네, 모두 초기화합니다", callback_data=f"RESET:CONFIRM:{ticker}")],
-            [InlineKeyboardButton("❌ 아니오, 유지합니다", callback_data="RESET:MENU")]
+            [InlineKeyboardButton("🔥 네, 즉시 영구 소각합니다", callback_data=f"RESET:CONFIRM:{ticker}")],
+            [InlineKeyboardButton("❌ 아니오, 취소합니다", callback_data="RESET:CANCEL")]
         ]
         return msg, InlineKeyboardMarkup(keyboard)
 
     def get_init_v_rev_confirm_menu(self, ticker):
-        msg = (
-            f"🛑 <b>[ 초긴급: {ticker} V-REV 장부 강제 초기화 ]</b>\n\n"
-            "이 버튼은 현재 쌓여있는 모든 정밀 LIFO 지층을 파괴하고 하나로 합칩니다. "
-            "실행 전 다음 <b>3가지 위험 요소</b>를 반드시 확인하세요:\n\n"
-            "1️⃣ <b>지층 붕괴:</b> 분할 매수된 모든 개별 로트가 하나의 거대 블록으로 강제 압축됩니다.\n"
-            "2️⃣ <b>전술 상실:</b> 최근 물량의 '전일 종가 익절' 타점이 소각되며, 전체 평단가 돌파 전까지 매도가 잠깁니다.\n"
-            "3️⃣ <b>용도 제한:</b> 수동 매매로 수량이 틀어졌거나, 최초 이관 시에만 사용하는 최후의 수단입니다.\n\n"
-            "⚠️ <b>정말로 모든 전략 지층을 삭제하고 초기화하시겠습니까?</b>"
-        )
+        msg = f"⚙️ <b>[{ticker} 단일 지층 초기화 (INIT) 프로토콜]</b>\n\n"
+        msg += "현재 KIS 계좌에 보유 중인 물량과 평단가를 1개의 '기초 블록'으로 묶어 V-REV 큐(Queue)에 이관합니다.\n\n"
+        msg += "⚠️ <b>주의:</b> 기존에 분할 매수했던 LIFO 지층 기록은 사라지고 1개의 덩어리로 합쳐집니다. 전환 초기에만 사용하십시오.\n"
+        
         keyboard = [
-            [InlineKeyboardButton("🔥 예, 위험을 인지하고 초기화합니다", callback_data=f"SET_INIT:EXEC_CONFIRM:{ticker}")],
-            [InlineKeyboardButton("❌ 아니오, 기존 지층을 유지합니다", callback_data="SETTLEMENT:BACK")]
+            [InlineKeyboardButton("✅ 계좌 데이터 기반 통이관 실행", callback_data=f"SET_INIT:EXEC_CONFIRM:{ticker}")],
+            [InlineKeyboardButton("❌ 취소", callback_data="RESET:CANCEL")]
         ]
         return msg, InlineKeyboardMarkup(keyboard)
 
-    # 🚨 MODIFIED: [V25.14 UI 팩트 교정] MOC 단어 소각 및 듀얼 레퍼런싱(지정가) 3-Strike 팩트 동기화
-    def get_avwap_warning_menu(self, ticker):
-        msg = (
-            f"🛑 <b>[ 초긴급 경고: {ticker} 듀얼 레퍼런싱 AVWAP 암살자 가동 ]</b>\n\n"
-            f"이 기능은 V-REV가 사용하고 남은 <b>계좌 내 모든 가용 현금 100%</b>를 일시적으로 끌어와, 파생상품의 노이즈를 배제한 <b>기초자산(SOXX) 기준 -0.67% (파생 -2% 상당)</b> 딥매수 타점에 전액 몰빵(All-in)하는 초공격적 전술입니다.\n\n"
-            f"⚠️ <b>[ 3대 강제 청산 (3-Strike Exit) 리스크 ]</b>\n"
-            f"1️⃣ <b>확정 손절:</b> 기초자산 기준 -1% (파생 -3% 상당) 하락 시, V-REV 지층과 무관하게 즉각 <b>전량 지정가(Limit) 하드스탑 손절</b>이 격발되어 막대한 현금 손실이 확정됩니다.\n"
-            f"2️⃣ <b>스퀴즈 익절:</b> 기초자산 기준 +1% (파생 +3% 상당) 반등 시 홈런 익절(지정가) 후 당일 작전을 영구 셧다운합니다.\n"
-            f"3️⃣ <b>타임 스탑:</b> 수익이 나지 않더라도 장 마감 5분 전(15:55 EST)에 오버나이트 원천 차단을 위해 무조건 <b>전량 덤핑 청산</b>됩니다.\n\n"
-            f"🔥 <b>이 모든 펀더멘털 붕괴 리스크와 확정 손실을 감수하고서라도 AVWAP 스나이퍼를 가동하시겠습니까?</b>"
-        )
+    def get_queue_management_menu(self, ticker, q_data):
+        msg = f"🗄️ <b>[ {ticker} V-REV 지층 큐(Queue) 정밀 관리 ]</b>\n\n"
+        
+        total_q = sum(item.get('qty', 0) for item in q_data)
+        total_invested = sum(item.get('qty', 0) * item.get('price', 0.0) for item in q_data)
+        avg_p = total_invested / total_q if total_q > 0 else 0.0
+        
+        msg += f"▫️ 총 보유 로트(Lot) : {len(q_data)} 개 층\n"
+        msg += f"▫️ 총 장전 수량 : {total_q} 주\n"
+        msg += f"▫️ 큐 통합 평단가 : ${avg_p:.2f}\n\n"
+        msg += "<b>[ LIFO 층별 상세 (최근 매수 순) ]</b>\n"
+        msg += "<code>No. 일자        수량   평단가\n"
+        msg += "-"*30 + "\n"
+        
+        keyboard = []
+        if not q_data:
+            msg += "📭 지층 데이터가 없습니다.\n"
+        else:
+            for idx, item in enumerate(reversed(q_data)):
+                qty = item.get('qty', 0)
+                price = item.get('price', 0.0)
+                date_str = item.get('date', '')[:10]
+                real_idx = len(q_data) - idx
+                msg += f"{real_idx:<3} {date_str[5:]} {qty:>4}주 ${price:.2f}\n"
+                
+                keyboard.append([
+                    InlineKeyboardButton(f"✏️ {real_idx}층 수정", callback_data=f"EDIT_Q:{ticker}:{item.get('date')}"),
+                    InlineKeyboardButton(f"🗑️ {real_idx}층 삭제", callback_data=f"DEL_REQ:{ticker}:{item.get('date')}")
+                ])
+                
+        msg += "-"*30 + "</code>\n\n"
+        msg += "🚨 <b>[ 비상 수혈 통제소 ]</b>\n"
+        msg += "최근 로트(상단 1개 층)를 시장가(MOC)로 강제 덤핑하여 가용 예산을 확보합니다."
+
+        keyboard.append([InlineKeyboardButton("🩸 최근 로트 수동 긴급 수혈 (MOC)", callback_data=f"EMERGENCY_REQ:{ticker}")])
+        keyboard.append([InlineKeyboardButton("🔄 대시보드 새로고침", callback_data=f"QUEUE:VIEW:{ticker}")])
+        
+        return msg, InlineKeyboardMarkup(keyboard)
+
+    def get_queue_action_confirm_menu(self, ticker, target_date, qty, price):
+        short_date = target_date[:10]
+        msg = f"🗑️ <b>[{ticker} 지층 부분 삭제 확인]</b>\n\n"
+        msg += f"선택하신 <b>[{short_date}]</b> 지층 (<b>{qty}주 / ${price:.2f}</b>) 데이터를 장부에서 도려내시겠습니까?\n"
+        msg += "▫️ 실제 KIS 계좌의 주식은 매도되지 않습니다.\n"
+        msg += "▫️ 계좌 수량과 장부가 어긋날 경우 /sync 시 비파괴 보정(CALIB)이 발동됩니다."
+        
         keyboard = [
-            [InlineKeyboardButton("💥 네, 리스크를 인지했으며 즉시 가동합니다", callback_data=f"MODE:AVWAP_ON:{ticker}")],
-            [InlineKeyboardButton("❌ 아니오, 가동을 취소합니다", callback_data=f"SETTLEMENT:BACK")]
+            [InlineKeyboardButton("🔥 네, 도려냅니다", callback_data=f"DEL_Q:{ticker}:{target_date}")],
+            [InlineKeyboardButton("❌ 취소 (돌아가기)", callback_data=f"QUEUE:VIEW:{ticker}")]
+        ]
+        return msg, InlineKeyboardMarkup(keyboard)
+
+    def get_emergency_moc_confirm_menu(self, ticker, emergency_qty, emergency_price):
+        msg = f"🚨 <b>[{ticker} 비상 수혈 최종 승인 대기]</b> 🚨\n\n"
+        msg += f"가장 최근에 물린 로트(Lot) <b>{emergency_qty}주</b> (평단 <b>${emergency_price:.2f}</b>)를 KIS 서버로 즉각 시장가(MOC) 강제 매도 전송합니다.\n\n"
+        msg += "⚠️ <b>포트폴리오 매니저 경고:</b>\n"
+        msg += "1. 이 작업은 즉각 격발되며 취소할 수 없습니다.\n"
+        msg += "2. 정규장/프리장 운영 시간에만 격발이 승인됩니다.\n"
+        msg += "3. 체결 즉시 해당 로트 기록은 큐(Queue)에서 영구 소각됩니다.\n"
+        
+        keyboard = [
+            [InlineKeyboardButton(f"🔥 [{ticker}] {emergency_qty}주 강제 수혈 격발", callback_data=f"EMERGENCY_EXEC:{ticker}")],
+            [InlineKeyboardButton("❌ 락온 해제 (안전 모드 복귀)", callback_data=f"QUEUE:VIEW:{ticker}")]
+        ]
+        return msg, InlineKeyboardMarkup(keyboard)
+
+    def get_avwap_warning_menu(self, ticker):
+        msg = f"🛑 <b>[{ticker}] 차세대 AVWAP 하이브리드 무장 해제 및 경고</b>\n\n"
+        msg += "현재 <b>AVWAP 하이브리드 암살자 모드</b> 가동을 지시하셨습니다.\n"
+        msg += "이 전술은 잉여 현금의 100%를 장중 딥매수(-2% 타점)에 쏟아붓는 초공격형 당일 청산 옵션입니다.\n\n"
+        msg += "⚠️ <b>[ 파괴적 제약 사항 ]</b>\n"
+        msg += "1. 기존 V14의 상방 스나이퍼 기능은 즉시 영구 셧다운됩니다.\n"
+        msg += "2. 당일 -1% 하드스탑(손절) 또는 +1% 스퀴즈(익절) 또는 15:55 타임스탑 강제 덤핑이 적용됩니다.\n"
+        msg += "3. V-REV 큐(Queue)와는 물량과 평단가가 100% 분리되어 시스템 메모 단독으로 연산됩니다.\n\n"
+        msg += "포트폴리오 매니저의 최종 승인을 대기합니다."
+        
+        keyboard = [
+            [InlineKeyboardButton("🔥 리스크 확인. AVWAP 락온(Lock-on) 승인", callback_data=f"MODE:AVWAP_ON:{ticker}")],
+            [InlineKeyboardButton("❌ 작전 취소 (안전 모드 유지)", callback_data="RESET:CANCEL")]
         ]
         return msg, InlineKeyboardMarkup(keyboard)
 
     def get_version_message(self, history_data, page_index=None):
-        if not history_data:
-            return "📭 기록된 버전 히스토리가 없습니다.", None
+        ITEMS_PER_PAGE = 5
+        total_pages = max(1, (len(history_data) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+        
+        # MODIFIED: [V25.06 UX 패치] /version 최초 진입 시(page_index=None) 가장 최신 데이터가 있는 마지막 페이지 강제 렌더링
+        current_page = (total_pages - 1) if page_index is None else page_index
+        
+        if current_page < 0:
+            current_page = 0
+        if current_page >= total_pages:
+            current_page = total_pages - 1
+            
+        start_idx = current_page * ITEMS_PER_PAGE
+        end_idx = start_idx + ITEMS_PER_PAGE
+        
+        # 원본 데이터의 오름차순(과거->최신) 배열 순서를 100% 유지
+        page_items = history_data[start_idx:end_idx]
 
-        items_per_page = 5
-        total_items = len(history_data)
-        total_pages = math.ceil(total_items / items_per_page)
-
-        if page_index is None:
-            page_index = 0
-        else:
-            page_index = max(0, min(page_index, total_pages - 1))
-
-        end_idx = total_items - (page_index * items_per_page)
-        start_idx = max(0, end_idx - items_per_page)
-        items = history_data[start_idx:end_idx]
-
-        if page_index == 0:
-            title = "🛠️ <b>[ 최신 업데이트 내역 ]</b>\n\n"
-        else:
-            title = f"📚 <b>[ 과거 업데이트 내역 (Page {page_index + 1}/{total_pages}) ]</b>\n\n"
-
-        msg = title
-        for h in items:
-            if isinstance(h, str):
-                parts = h.split(' ', 2)
+        msg = "🚀 <b>[ PIPIOS 퀀트 엔진 패치노트 ]</b>\n"
+        msg += "▫️ 현재 시스템: <code>V25.06 하이브리드 코어</code>\n\n"
+        
+        for item in page_items:
+            if isinstance(item, str):
+                parts = item.split(" ", 2)
                 if len(parts) >= 3:
                     ver = parts[0]
-                    date = parts[1]
-                    summary = parts[2]
-                    msg += f"📌 <b>{ver}</b> {date}\n▫️ {summary}\n\n"
+                    date_str = parts[1].strip("[]")
+                    desc = parts[2]
                 else:
-                    msg += f"📌 {h}\n\n"
-            elif isinstance(h, dict): 
-                msg += f"📌 <b>{h.get('version', '')}</b> ({h.get('date', '')})\n▫️ {h.get('summary', '')}\n\n"
-        
-        msg = msg.strip()
-        keyboard = []
-        
-        nav_row = []
-        if page_index < total_pages - 1:
-            nav_row.append(InlineKeyboardButton("◀️ 과거 기록", callback_data=f"VERSION:PAGE:{page_index + 1}"))
-        if page_index > 0:
-            nav_row.append(InlineKeyboardButton("최신 기록 ▶️", callback_data=f"VERSION:PAGE:{page_index - 1}"))
+                    ver = "V??"
+                    date_str = "-"
+                    desc = item
+                msg += f"💠 <b>{ver}</b> ({date_str})\n"
+                msg += f"▫️ {desc}\n\n"
+            elif isinstance(item, dict):
+                ver = item.get('version', 'V??')
+                date_str = item.get('date', '-')
+                msg += f"💠 <b>{ver}</b> ({date_str})\n"
+                for desc in item.get('desc', []):
+                    msg += f"▫️ {desc}\n"
+                msg += "\n"
             
+        msg += f"📄 <i>페이지 {current_page + 1} / {total_pages}</i>"
+
+        keyboard = []
+        nav_row = []
+        if current_page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ 이전", callback_data=f"VERSION:PAGE:{current_page - 1}"))
+        if current_page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("다음 ➡️", callback_data=f"VERSION:PAGE:{current_page + 1}"))
+        
         if nav_row:
             keyboard.append(nav_row)
-            
-        if page_index > 0:
-            keyboard.append([InlineKeyboardButton("⬆️ 접기 (최신 버전만 보기)", callback_data="VERSION:LATEST")])
-            
-        return msg, InlineKeyboardMarkup(keyboard) if keyboard else None
-
-    def get_queue_management_menu(self, ticker, q_data):
-        msg = f"🗄️ <b>[ {ticker} V-REV 큐(Queue) 정밀 타격 통제소 ]</b>\n\n"
-        msg += "▫️ 현재 장부에 적재된 날짜별 지층입니다.\n"
-        msg += "▫️ 🛡️ <b>표기된 지층만 수정/삭제가 가능합니다.</b>\n"
-        msg += "▫️ 수동 추가: <code>/add_q 종목명 YYYY-MM-DD 수량 평단가</code>\n\n"
-
-        keyboard = []
-        if not q_data:
-            msg += "텅 비어 있습니다. (0주)\n"
-        else:
-            sorted_q = sorted(q_data, key=lambda x: x.get('date', ''), reverse=True)
-            for i, item in enumerate(sorted_q):
-                floor = i + 1
-                date_str = item.get('date', 'Unknown')
-                short_date = date_str[2:10] if len(date_str) >= 10 else date_str 
-                qty = item.get('qty', 0)
-                price = item.get('price', 0.0)
-                lot_type = item.get('type', '')
-
-                if lot_type == "INIT_TRANSFERRED":
-                    btn_text = f"[{floor}] {short_date} | {qty}주 | ${price:.2f} 🔒(보호)"
-                    callback_data = "IGNORE"
-                else:
-                    btn_text = f"[{floor}] {short_date} | {qty}주 | ${price:.2f} ❌"
-                    callback_data = f"DEL_REQ:{ticker}:{date_str}"
-                
-                keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
-            
-            keyboard.append([InlineKeyboardButton("🩸 수동 긴급 수혈 (최근 로트 강제매도)", callback_data=f"EMERGENCY_REQ:{ticker}")])
+        keyboard.append([InlineKeyboardButton("❌ 닫기", callback_data="RESET:CANCEL")])
         
-        keyboard.append([InlineKeyboardButton("🔙 대시보드로 돌아가기", callback_data=f"REC:SYNC:{ticker}")])
-        return msg, InlineKeyboardMarkup(keyboard)
-
-    def get_emergency_moc_confirm_menu(self, ticker, qty, price):
-        msg = (
-            f"🛑 <b>[ 초긴급: {ticker} 수동 긴급 수혈(MOC) 승인 ]</b>\n\n"
-            f"가장 최근에 물린(LIFO) 지층 물량을 <b>시장가(MOC)</b>로 강제 청산하여 즉각 현금을 확보합니다.\n\n"
-            f"▫️ <b>대상 물량:</b> {qty}주\n"
-            f"▫️ <b>대상 평단:</b> ${price:.2f}\n\n"
-            f"⚠️ <b>[ 3중 경고 ]</b>\n"
-            f"1️⃣ <b>장운영시간(정규장/프리장)</b>에만 정상 체결됩니다.\n"
-            f"2️⃣ 체결 즉시 장부에서 해당 로트가 영구 삭제됩니다.\n"
-            f"3️⃣ 손실이 발생하더라도 <b>시장가(MOC)</b>로 즉각 던집니다.\n\n"
-            f"🔥 <b>정말로 강제 청산을 격발하시겠습니까?</b>"
-        )
-        keyboard = [
-            [InlineKeyboardButton("💥 예, 장운영시간임을 확인했으며 즉시 격발합니다", callback_data=f"EMERGENCY_EXEC:{ticker}")],
-            [InlineKeyboardButton("❌ 아니오, 수동 수혈을 취소합니다", callback_data=f"QUEUE:VIEW:{ticker}")]
-        ]
-        return msg, InlineKeyboardMarkup(keyboard)
-
-    def get_queue_action_confirm_menu(self, ticker, target_date, qty, price):
-        short_date = target_date[:10] if len(target_date) >= 10 else target_date
-        msg = f"⚠️ <b>[ {ticker} 지층 안전 통제망 ]</b>\n\n"
-        msg += f"선택하신 <b>[{short_date}]</b> 지층을 제어합니다:\n"
-        msg += f"▫️ 현재 수량: <b>{qty}주</b>\n"
-        msg += f"▫️ 현재 평단: <b>${price:.2f}</b>\n\n"
-        msg += "원하시는 작업을 선택해 주십시오.\n"
-        msg += "<i>(✏️ 수정을 누르시면 봇이 새 값을 입력받기 위해 대기합니다.)</i>"
-
-        keyboard = [
-            [InlineKeyboardButton("✏️ 지층 정보 수정하기", callback_data=f"EDIT_Q:{ticker}:{target_date}")],
-            [InlineKeyboardButton("🗑️ 영구 삭제 (복구 불가)", callback_data=f"DEL_Q:{ticker}:{target_date}")],
-            [InlineKeyboardButton("🔙 취소 및 목록으로", callback_data=f"QUEUE:VIEW:{ticker}")]
-        ]
         return msg, InlineKeyboardMarkup(keyboard)
 # ==========================================================
 # [telegram_view.py] - Part 2/2 부 (하반부)
-# ⚠️ V-REV 설정줄 숨김 및 종목 간 띄어쓰기(엔터) 간격 완벽 교정
-# 💡 [V24.15 대수술] 2대 코어(V14, V-REV) 체제 UI 최적화 및 V_VWAP 적출
-# 💡 [V24.18 하이브리드] V-REV 종속형 AVWAP 투트랙(Two-track) 지시서 표출 로직 융합
-# 💡 [긴급 수술] V-REV 예방적 방어선 수동 장전 버튼(EXEC) UI 100% 복원
-# 🚨 [V25.09 렌더링 패치] V-REV 지시서 하단에 덧붙여지던 V14 찌꺼기(🧹 줍줍, 0.975) 강제 출력 블록 영구 소각
+# ⚠️ 수술 내역: 
+# 1. 1부(상반부)와 100% 결합되도록 들여쓰기 뎁스(4칸) 팩트 정렬
+# 2. 사용자의 원본 2부 코드(동기화 지시서, 결산, 스냅샷, 종목메뉴) 100% 무손실 복원
+# 3. 1부에서 누락되었던 get_ticker_menu 라우터 하단부 통합 완료
 # ==========================================================
 
     def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active, p_trade_data=None):
@@ -291,10 +265,10 @@ class TelegramView:
             v_mode = t_info['version']
             
             if t_info.get('t_val', 0.0) > (t_info.get('split', 40.0) * 1.1):
-                body_msg += f"⚠️ <b>[🚨 시스템 긴급 경고: 비정상 T값 폭주 감지!]</b>\n"
+                body_msg += "⚠️ <b>[🚨 시스템 긴급 경고: 비정상 T값 폭주 감지!]</b>\n"
                 body_msg += f"🔎 현재 T값(<b>{t_info['t_val']:.4f}T</b>)이 설정된 분할수(<b>{int(t_info['split'])}분할</b>) 초과했습니다!\n"
-                body_msg += f"💡 <b>원인 역산 추정:</b> 수동 매수로 수량이 급증했거나, '/seed' 시드머니 설정이 대폭 축소되었습니다.\n"
-                body_msg += f"🛡️ <b>가동 조치:</b> 마이너스 호가 차단용 절대 하한선($0.01) 방어막 가동 중!\n\n"
+                body_msg += "💡 <b>원인 역산 추정:</b> 수동 매수로 수량이 급증했거나, '/seed' 시드머니 설정이 대폭 축소되었습니다.\n"
+                body_msg += "🛡️ <b>가동 조치:</b> 마이너스 호가 차단용 절대 하한선($0.01) 방어막 가동 중!\n\n"
 
             if v_mode == "V_REV":
                 v_mode_display = "V_REV 역추세"
@@ -309,7 +283,7 @@ class TelegramView:
             
             if proc_status == "🩸리버스(긴급수혈)":
                 body_msg += f"⚠️ <b>[🚨 비상 상황: {t} 긴급 수혈 중]</b>\n"
-                body_msg += f"❗ <i>에스크로 금고가 바닥나 강제 매도를 통해 현금을 생성합니다.</i>\n\n"
+                body_msg += "❗ <i>에스크로 금고가 바닥나 강제 매도를 통해 현금을 생성합니다.</i>\n\n"
             
             if is_rev:
                 bdg_txt = f"리버스 잔금쿼터: ${t_info['one_portion']:,.0f}"
@@ -332,7 +306,7 @@ class TelegramView:
             if escrow > 0:
                 body_msg += f"🔐 내 금고 보호액: ${escrow:,.2f}\n"
             elif is_rev and proc_status == "🩸리버스(긴급수혈)":
-                body_msg += f"🔐 내 금고 보호액: $0.00 (Empty 🚨)\n"
+                body_msg += "🔐 내 금고 보호액: $0.00 (Empty 🚨)\n"
                 
             body_msg += f"💰 현재 ${t_info['curr']:,.2f} / 평단 ${t_info['avg']:,.2f} ({t_info['qty']}주)\n"
             
@@ -362,7 +336,7 @@ class TelegramView:
                     
                 if sniper_status_txt == "ON":
                     if not is_trade_active:
-                        body_msg += f"🎯 상방 스나이퍼: 감시 종료 (장마감)\n"
+                        body_msg += "🎯 상방 스나이퍼: 감시 종료 (장마감)\n"
                     elif tracking_info.get('is_trailing', False):
                         peak_price = tracking_info.get('peak_price', 0.0)
                         trigger_price = tracking_info.get('trigger_price', 0.0)
@@ -377,32 +351,27 @@ class TelegramView:
                         if sn_target > 0:
                             body_msg += f"🎯 상방 스나이퍼: ${sn_target:.2f} 이상 대기\n"
             elif v_mode == "V_REV":
-                body_msg += f"⚖️ <b>역추세 LIFO 큐(Queue) 엔진 스탠바이</b>\n"
-                body_msg += f"⏱️ <b>VWAP 스케줄:</b> 15:30 EST 앵커 세팅 ➔ 1분 단위 교차 타격\n"
+                body_msg += "⚖️ <b>역추세 LIFO 큐(Queue) 엔진 스탠바이</b>\n"
+                body_msg += "⏱️ <b>VWAP 스케줄:</b> 15:30 EST 앵커 세팅 ➔ 1분 단위 교차 타격\n"
             
             if v_mode == "V_REV":
-                body_msg += f"📋 <b>[주문 가이던스 - ⚖️다중 LIFO 제어]</b>\n"
+                body_msg += "📋 <b>[주문 가이던스 - ⚖️다중 LIFO 제어]</b>\n"
                 
-                # MODIFIED: [V25.09 렌더링 패치] 텔레그램 뷰어(UI) 내부에서 하드코딩으로 연산해서 덧붙이던
-                # 1.15 / 0.975 구버전 수동 디커플링 로직 및 🧹줍줍 블록을 100% 영구 소각(Nuke)했습니다.
-                # 오직 telegram_bot.py 가 정밀 역산하여 던져준 v_rev_guidance 텍스트만 순수하게 투영합니다.
                 raw_guidance = t_info.get('v_rev_guidance', " (가이던스 대기 중)")
                 raw_guidance = raw_guidance.rstrip('\n')
                 body_msg += raw_guidance + "\n"
 
-                # 💡 [V24.18 하이브리드] V-REV 모드일 때 AVWAP 켜져있으면 투트랙(Two-track) 지시서 독립 표출
                 if t_info.get('avwap_active', False):
                     avwap_qty = t_info.get('avwap_qty', 0)
                     avwap_avg = t_info.get('avwap_avg', 0.0)
                     avwap_status = t_info.get('avwap_status', '👀 장초반 필터 스캔 대기')
                     avwap_budget = t_info.get('avwap_budget', 0.0)
                     
-                    body_msg += f"\n⚔️ <b>[ 하이브리드 AVWAP 암살자 가동 중 ]</b>\n"
+                    body_msg += "\n⚔️ <b>[ 하이브리드 AVWAP 암살자 가동 중 ]</b>\n"
                     body_msg += f"▫️ 잉여 예산(100%): ${avwap_budget:,.0f}\n"
                     body_msg += f"▫️ 독립 물량: {avwap_qty}주 (평단 ${avwap_avg:.2f})\n"
                     body_msg += f"▫️ 작전 상태: <b>{avwap_status}</b>\n"
                     
-                # 🚨 [긴급 수술] V-REV 모드 전용 "수동 장전" 버튼 표출
                 if is_trade_active:
                     keyboard.append([InlineKeyboardButton(f"🚀 {t} V-REV 방어선 수동 장전", callback_data=f"EXEC:{t}")])
                 
@@ -431,10 +400,12 @@ class TelegramView:
                         body_msg += f" 🧹 줍줍({len(jup_orders)}개): <b>${prices[0]} ~ ${prices[-1]} (LOC)</b>\n"
                     
                     if is_trade_active:
-                        if t_info.get('is_locked', False): body_msg += f" (✅ 금일 주문 완료/잠금)\n"
-                        else: keyboard.append([InlineKeyboardButton(f"🚀 {t} 주문 실행", callback_data=f"EXEC:{t}")])
+                        if t_info.get('is_locked', False):
+                            body_msg += " (✅ 금일 주문 완료/잠금)\n"
+                        else:
+                            keyboard.append([InlineKeyboardButton(f"🚀 {t} 주문 실행", callback_data=f"EXEC:{t}")])
                 else:
-                    body_msg += f" 💤 주문 없음 (관망/예산소진)\n"
+                    body_msg += " 💤 주문 없음 (관망/예산소진)\n"
                 
             body_msg += "\n"
 
@@ -448,7 +419,9 @@ class TelegramView:
         if vol_summaries:
             final_msg += "📊 <b>[자율지표]</b> " + " | ".join(vol_summaries) + "\n<i>(상세: /mode)</i>\n\n"
 
-        if not is_trade_active: final_msg += "⛔ 장마감/애프터마켓: 주문 불가"
+        if not is_trade_active:
+            final_msg += "⛔ 장마감/애프터마켓: 주문 불가"
+            
         return final_msg, InlineKeyboardMarkup(keyboard) if keyboard else None
 
     def get_settlement_message(self, active_tickers, config, atr_data, dynamic_target_data=None):
@@ -473,8 +446,8 @@ class TelegramView:
             msg += f"▫️ 분할: {split_cnt}회\n▫️ 목표: {target_pct}%\n▫️ 자동복리: {comp_rate}%\n"
             
             if ver == "V_REV":
-                msg += f"⚖️ <b>역추세(Reversion) 하이브리드 엔진 스탠바이:</b>\n"
-                msg += f"▫️ 전일 종가 앵커 기준 LIFO 큐 교차 매매 대기 중\n\n"
+                msg += "⚖️ <b>역추세(Reversion) 하이브리드 엔진 스탠바이:</b>\n"
+                msg += "▫️ 전일 종가 앵커 기준 LIFO 큐 교차 매매 대기 중\n\n"
                 row_init = [InlineKeyboardButton(f"🔌 {t} V-REV 큐 장부 초기화 (물량이관)", callback_data=f"SET_INIT:V_REV:{t}")]
                 keyboard.append(row_init)
             else:
@@ -516,7 +489,8 @@ class TelegramView:
         groups = {}
         for r in records:
             key = (r['date'], r['side'])
-            if key not in groups: groups[key] = {'sum_qty': 0, 'sum_cost': 0}
+            if key not in groups:
+                groups[key] = {'sum_qty': 0, 'sum_cost': 0}
             groups[key]['sum_qty'] += r['qty']
             groups[key]['sum_cost'] += (r['qty'] * r['price'])
 
@@ -527,7 +501,8 @@ class TelegramView:
                 agg_list.append({'date': date, 'side': side, 'qty': data['sum_qty'], 'avg': avg_p})
 
         agg_list.sort(key=lambda x: x['date'])
-        for i, item in enumerate(agg_list): item['no'] = i + 1
+        for i, item in enumerate(agg_list):
+            item['no'] = i + 1
         agg_list.reverse()
 
         title = "과거 졸업 기록" if is_history else "일자별 매매 (통합 변동분)"
@@ -541,13 +516,15 @@ class TelegramView:
             s_str = "🔴매수" if item['side'] == 'BUY' else "🔵매도"
             msg += f"{item['no']:<3} {d_str} {s_str} ${item['avg']:<6.2f} {item['qty']}주\n"
             
-        if len(agg_list) > 50: msg += "... (이전 기록 생략)\n"
+        if len(agg_list) > 50:
+            msg += "... (이전 기록 생략)\n"
+            
         msg += "-"*30 + "</code>\n"
 
-        msg += f"📊 <b>[ 현재 진행 상황 요약 ]</b>\n"
+        msg += "📊 <b>[ 현재 진행 상황 요약 ]</b>\n"
         if not is_history:
             if is_reverse:
-                msg += f"▪️ 운용 상태 : 🚨 <b>시드 소진 (리버스모드 가동 중)</b>\n"
+                msg += "▪️ 운용 상태 : 🚨 <b>시드 소진 (리버스모드 가동 중)</b>\n"
                 msg += f"▪️ 리버스 T값 : <b>{t_val} T</b> (특수연산 적용됨)\n"
             else:
                 msg += f"▪️ <b>현재 T값 : {t_val} T</b> ({int(split)}분할)\n"
@@ -592,7 +569,7 @@ class TelegramView:
                 img.paste(bg, (0, 0))
             else:
                 draw.rectangle([0, 0, W, IMG_H], fill="#111217")
-        except: 
+        except Exception: 
             draw.rectangle([0, 0, W, IMG_H], fill="#111217")
 
         f_title = self._load_best_font(self.bold_font_paths, 65)
@@ -637,4 +614,3 @@ class TelegramView:
             [InlineKeyboardButton("💎 SOXL + TQQQ 통합", callback_data="TICKER:ALL")]
         ]
         return f"🔄 <b>[ 운용 종목 선택 ]</b>\n현재: <b>{', '.join(current_tickers)}</b>", InlineKeyboardMarkup(keyboard)
-

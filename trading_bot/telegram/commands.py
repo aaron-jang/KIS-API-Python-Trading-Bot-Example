@@ -7,10 +7,12 @@
 # 🚨 [V25.01 UI 교정] /sync 지시서 내 AVWAP 잉여 예산 표기 오류 수정 (팩트 동기화)
 # 🚨 [V25.02 스냅샷 패치] V-REV 0주 스윕 시 장부 소각 전 메모리 스냅샷 캡처 및 졸업카드 렌더링 연결
 # 🚨 [V25.06 롤오버 및 복리 패치] 장외 시간 타점 왜곡 방어(YF 치환) 및 V-REV 스윕 익절 복리(Seed) 100% 자동 증식 이식
-# 🚨 [V25.07 수학적 교정] 구버전 승수 잔재 완전 철거 및 최신 디커플링 공식(0.999 및 ÷0.935) 팩트 주입
+# 🚨 [V25.07 수학적 교정] 구버전 승수 잔재 완전 철거 및 최신 디커플링 공식(0.999 및 /0.935) 팩트 주입
 # 🚨 [V25.10 줍줍 복원 패치] /sync 및 수동 EXEC 시 V-REV 줍줍(Grid) 덫 누락 완벽 복구
 # 🚨 [V25.11 긴급 버그픽스] cmd_sync 라우터 내 prev_c 참조 변수명을 safe_prev_close로 팩트 교정 완료
 # 🚨 [V25.13 디커플링 스왑 패치] 0주 보유 시 Buy1(/0.935)과 Buy2(*0.999)의 변수를 근본적으로 교환하여 고가->저가 순서 완벽 통일
+# 🚨 [전면 교정 패치] 파일 전역의 F841, E722, F541, E701 에러 100% 일괄 소각 완료
+# 🚨 [컴파일 붕괴 방어] NBSP(유령 공백) 전면 소각 및 4칸 들여쓰기 팩트 정규화 완료
 # ==========================================================
 import logging
 import datetime
@@ -54,24 +56,34 @@ class TelegramController:
         est = pytz.timezone('US/Eastern')
         now_est = datetime.datetime.now(est)
         is_dst = now_est.dst() != datetime.timedelta(0)
-        return (17, "🌞 <b>서머타임 적용 (Summer)</b>") if is_dst else (18, "❄️ <b>서머타임 해제 (Winter)</b>")
+        
+        if is_dst:
+            return (17, "🌞 <b>서머타임 적용 (Summer)</b>")
+        else:
+            return (18, "❄️ <b>서머타임 해제 (Winter)</b>")
 
     def _get_market_status(self):
         est = pytz.timezone('US/Eastern')
         now = datetime.datetime.now(est)
         nyse = mcal.get_calendar('NYSE')
         schedule = nyse.schedule(start_date=now.date(), end_date=now.date())
-        if schedule.empty: return "CLOSE", "⛔ 장휴일"
+        
+        if schedule.empty:
+            return "CLOSE", "⛔ 장휴일"
         
         market_open = schedule.iloc[0]['market_open'].astimezone(est)
         market_close = schedule.iloc[0]['market_close'].astimezone(est)
         pre_start = market_open.replace(hour=4, minute=0)
         after_end = market_close.replace(hour=20, minute=0)
 
-        if pre_start <= now < market_open: return "PRE", "🌅 프리마켓"
-        elif market_open <= now < market_close: return "REG", "🔥 정규장"
-        elif market_close <= now < after_end: return "AFTER", "🌙 애프터마켓"
-        else: return "CLOSE", "⛔ 장마감"
+        if pre_start <= now < market_open:
+            return "PRE", "🌅 프리마켓"
+        elif market_open <= now < market_close:
+            return "REG", "🔥 정규장"
+        elif market_close <= now < after_end:
+            return "AFTER", "🌙 애프터마켓"
+        else:
+            return "CLOSE", "⛔ 장마감"
 
     def _calculate_budget_allocation(self, cash, tickers):
         sorted_tickers = sorted(tickers, key=lambda x: 0 if x == "SOXL" else (1 if x == "TQQQ" else 2))
@@ -122,7 +134,8 @@ class TelegramController:
             try:
                 with open(q_file, 'r', encoding='utf-8') as f:
                     all_q = json.load(f)
-            except: pass
+            except Exception:
+                pass
             
         all_q[ticker] = new_q
         
@@ -149,7 +162,7 @@ class TelegramController:
                     await context.bot.send_message(
                         chat_id, 
                         f"⚠️ <b>[무결성 경고]</b> 큐 총합(<b>{new_q_total}주</b>) 🆚 실제 계좌 잔고(<b>{actual_qty}주</b>)\n"
-                        f"▫️ <i>수량이 일치하지 않습니다. 분할 입력 중이시라면 나머지 물량도 마저 입력해 맞춰주세요.</i>", 
+                        "▫️ <i>수량이 일치하지 않습니다. 분할 입력 중이시라면 나머지 물량도 마저 입력해 맞춰주세요.</i>", 
                         parse_mode='HTML'
                     )
         except asyncio.TimeoutError:
@@ -160,7 +173,9 @@ class TelegramController:
         return True
 
     async def cmd_queue(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         args = context.args
         if not args:
             return await update.message.reply_text("❌ 종목명을 입력하세요. 예: /queue SOXL")
@@ -177,7 +192,8 @@ class TelegramController:
         await update.message.reply_text(text=msg, reply_markup=reply_markup, parse_mode='HTML')
 
     async def cmd_add_q(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
         
         try:
             args = context.args
@@ -211,7 +227,8 @@ class TelegramController:
                 try:
                     with open(q_file, 'r', encoding='utf-8') as f:
                         all_q = json.load(f)
-                except: pass
+                except Exception:
+                    pass
                     
             ticker_q = all_q.get(ticker, [])
             ticker_q.append({
@@ -231,7 +248,9 @@ class TelegramController:
             await update.message.reply_text(f"❌ 알 수 없는 에러 발생: {e}")
 
     async def cmd_clear_q(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         args = context.args
         if not args:
             return await update.message.reply_text("❌ 종목명을 입력하세요. 예: /clear_q SOXL")
@@ -245,18 +264,23 @@ class TelegramController:
             await update.message.reply_text(f"❌ 소각 중 에러 발생: {e}")
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         target_hour, season_icon = self._get_dst_info()
         latest_version = self.cfg.get_latest_version() 
         msg = self.view.get_start_message(target_hour, season_icon, latest_version) 
         await update.message.reply_text(msg, parse_mode='HTML')
         
     async def cmd_sync(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         await update.message.reply_text("🔄 시장 분석 및 지시서 작성 중...")
         
         async with self.tx_lock:
             cash, holdings = self.broker.get_account_balance()
+            
             if holdings is None:
                 await update.message.reply_text("❌ KIS API 통신 오류로 계좌 정보를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.")
                 return
@@ -336,10 +360,8 @@ class TelegramController:
                 
                 if dynamic_pct_obj and hasattr(dynamic_pct_obj, 'metric_val'):
                     real_val = float(dynamic_pct_obj.metric_val)
-                    real_name = dynamic_pct_obj.metric_name
                 else:
                     real_val = 0.0
-                    real_name = "지표"
                     
                 vol_status = "ON" if real_val >= 20.0 else "OFF"
                 v_rev_q_qty = 0
@@ -380,10 +402,8 @@ class TelegramController:
                         if len(q_list) > 3:
                             v_rev_guidance += f"  <i>... (이하 {len(q_list)-3}개 로트 대기 중)</i>\n"
                     else:
-                        v_rev_guidance += f" 🔵 매도(Pop): 대기 물량 없음 (관망)\n"
+                        v_rev_guidance += " 🔵 매도(Pop): 대기 물량 없음 (관망)\n"
                     
-                    # 🚨 MODIFIED: [V25.13 디커플링 스왑 패치] 0주 보유 시 Buy1(/0.935)과 Buy2(*0.999) 변수 스왑.
-                    # 불필요한 UI 정렬 로직 철거. 고가 -> 저가 순서 자동 정렬 확립.
                     if safe_prev_close > 0:
                         b1_price = round(safe_prev_close / 0.935 if v_rev_q_qty == 0 else safe_prev_close * 0.995, 2)
                         b2_price = round(safe_prev_close * 0.999 if v_rev_q_qty == 0 else safe_prev_close * 0.9725, 2)
@@ -403,7 +423,7 @@ class TelegramController:
                                 grid_end = max(grid_end, 0.01)
                                 v_rev_guidance += f" 🧹 줍줍(5개): ${grid_start:.2f} ~ ${grid_end:.2f} (LOC)"
                     else:
-                        v_rev_guidance += f" 🔴 매수 대기: 타점 연산 대기 중"
+                        v_rev_guidance += " 🔴 매수 대기: 타점 연산 대기 중"
 
                     if hasattr(self.cfg, 'get_avwap_hybrid_mode') and self.cfg.get_avwap_hybrid_mode(t):
                         is_avwap_active = True
@@ -462,20 +482,24 @@ class TelegramController:
         await update.message.reply_text(final_msg, reply_markup=markup, parse_mode='HTML')
 
     async def cmd_record(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         chat_id = update.message.chat_id
         status_msg = await context.bot.send_message(chat_id, "🛡️ <b>장부 무결성 검증 및 동기화 중...</b>", parse_mode='HTML')
         
         success_tickers = []
         for t in self.cfg.get_active_tickers():
             res = await self.process_auto_sync(t, chat_id, context, silent_ledger=True)
-            if res == "SUCCESS": success_tickers.append(t)
+            if res == "SUCCESS":
+                success_tickers.append(t)
         
         if success_tickers: 
             async with self.tx_lock:
                 _, holdings = self.broker.get_account_balance()
             await self._display_ledger(success_tickers[0], chat_id, context, message_obj=status_msg, pre_fetched_holdings=holdings)
-        else: await status_msg.edit_text("✅ <b>동기화 완료</b> (표시할 진행 중인 장부가 없거나 에러 대기 중입니다)", parse_mode='HTML')
+        else:
+            await status_msg.edit_text("✅ <b>동기화 완료</b> (표시할 진행 중인 장부가 없거나 에러 대기 중입니다)", parse_mode='HTML')
 
     def _sync_escrow_cash(self, ticker):
         is_rev = self.cfg.get_reverse_state(ticker).get("is_active", False)
@@ -496,8 +520,10 @@ class TelegramController:
         escrow = 0.0
         for r in target_recs:
             amt = r['qty'] * r['price']
-            if r['side'] == 'SELL': escrow += amt
-            elif r['side'] == 'BUY': escrow -= amt
+            if r['side'] == 'SELL':
+                escrow += amt
+            elif r['side'] == 'BUY':
+                escrow -= amt
                 
         self.cfg.set_escrow_cash(ticker, max(0.0, escrow))
 
@@ -648,7 +674,8 @@ class TelegramController:
                             
                             if new_hist:
                                 msg = f"🎉 <b>[{ticker} 졸업 확인!]</b>\n장부를 명예의 전당에 저장하고 새 사이클을 준비합니다."
-                                if added_seed > 0: msg += f"\n💸 <b>자동 복리 +${added_seed:,.0f}</b> 이 다음 운용 시드에 완벽하게 추가되었습니다!"
+                                if added_seed > 0:
+                                    msg += f"\n💸 <b>자동 복리 +${added_seed:,.0f}</b> 이 다음 운용 시드에 완벽하게 추가되었습니다!"
                                 await context.bot.send_message(chat_id, msg, parse_mode='HTML')
                                 try:
                                     img_path = self.view.create_profit_image(
@@ -696,7 +723,8 @@ class TelegramController:
                                 new_avg = ((temp_sim_qty * temp_sim_avg) + (exec_qty * exec_price)) / (temp_sim_qty + exec_qty) if (temp_sim_qty + exec_qty) > 0 else exec_price
                                 temp_sim_qty += exec_qty
                                 temp_sim_avg = new_avg
-                            else: temp_sim_qty -= exec_qty
+                            else:
+                                temp_sim_qty -= exec_qty
                                 
                             new_target_records.append({
                                 'date': target_ledger_str, 'side': "BUY" if side_cd == "02" else "SELL",
@@ -717,7 +745,8 @@ class TelegramController:
                         })
                         
                     if new_target_records:
-                        for r in new_target_records: r['avg_price'] = actual_avg
+                        for r in new_target_records:
+                            r['avg_price'] = actual_avg
                     elif temp_recs: 
                         temp_recs[-1]['avg_price'] = actual_avg
                         
@@ -742,18 +771,24 @@ class TelegramController:
             
             for rec in recs:
                 parts = rec['date'].split('-')
-                if len(parts) == 3: date_short = f"{parts[1]}.{parts[2]}"
-                else: date_short = rec['date']
+                if len(parts) == 3:
+                    date_short = f"{parts[1]}.{parts[2]}"
+                else:
+                    date_short = rec['date']
                     
                 side_str = "🔴매수" if rec['side'] == 'BUY' else "🔵매도"
                 key = (date_short, side_str)
                 
-                if key not in agg_dict: agg_dict[key] = {'qty': 0, 'amt': 0.0}
+                if key not in agg_dict:
+                    agg_dict[key] = {'qty': 0, 'amt': 0.0}
+                    
                 agg_dict[key]['qty'] += rec['qty']
                 agg_dict[key]['amt'] += (rec['qty'] * rec['price'])
                 
-                if rec['side'] == 'BUY': total_buy += (rec['qty'] * rec['price'])
-                elif rec['side'] == 'SELL': total_sell += (rec['qty'] * rec['price'])
+                if rec['side'] == 'BUY':
+                    total_buy += (rec['qty'] * rec['price'])
+                elif rec['side'] == 'SELL':
+                    total_sell += (rec['qty'] * rec['price'])
             
             report = f"📜 <b>[ {ticker} 일자별 매매 (통합 변동분) (총 {len(agg_dict)}일) ]</b>\n\n<code>No. 일자   구분  평균단가  수량\n"
             report += "-"*30 + "\n"
@@ -773,7 +808,7 @@ class TelegramController:
             split = self.cfg.get_split_count(ticker)
             t_val, _ = self.cfg.get_absolute_t_val(ticker, actual_qty, actual_avg)
             
-            report += f"📊 <b>[ 현재 진행 상황 요약 ]</b>\n"
+            report += "📊 <b>[ 현재 진행 상황 요약 ]</b>\n"
             report += f"▪️ 현재 T값 : {t_val:.4f} T ({int(split)}분할)\n"
             report += f"▪️ 보유 수량 : {actual_qty} 주 (평단 ${actual_avg:,.2f})\n"
             report += f"▪️ 총 매수액 : ${total_buy:,.2f}\n"
@@ -791,9 +826,12 @@ class TelegramController:
         keyboard.append(row)
         markup = InlineKeyboardMarkup(keyboard)
 
-        if query: await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
-        elif message_obj: await message_obj.edit_text(msg, reply_markup=markup, parse_mode='HTML')
-        else: await context.bot.send_message(chat_id, msg, reply_markup=markup, parse_mode='HTML')
+        if query:
+            await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
+        elif message_obj:
+            await message_obj.edit_text(msg, reply_markup=markup, parse_mode='HTML')
+        else:
+            await context.bot.send_message(chat_id, msg, reply_markup=markup, parse_mode='HTML')
 # ==========================================================
 # [telegram_bot.py] - Part 2/2 부 (하반부)
 # ⚠️ 수술 내역: 
@@ -805,20 +843,27 @@ class TelegramController:
 # 🚨 [V25.06 롤오버 패치] 수동 EXEC 시 장외시간 낡은 전일종가(T-2)를 최신 현재가(T-1)로 치환(Overwrite)하여 타점 불일치 해결
 # 🚨 [V25.07 수학적 교정] 구버전 승수 잔재 완전 철거 및 최신 디커플링 공식(0.999 및 /0.935) 팩트 주입
 # 🚨 [V25.10 줍줍 복원 패치] 수동 EXEC 시 5개의 줍줍(Grid) LOC 주문이 KIS 서버로 정상 장전되도록 격발 알고리즘 복원
+# 🚨 [치명적 붕괴 복구] cmd_settlement 내 빈 블록(Empty Block) 100% 적출 완료 (IndentationError 해결)
+# 🚨 [V25.05 텍스트 라우터] 하단 고정 키보드 한글 신호 증발을 막기 위한 다이렉트 패스망 이식 완료
 # ==========================================================
 
     async def cmd_history(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         history = self.cfg.get_history()
         if not history:
             await update.message.reply_text("📜 저장된 역사가 없습니다.")
             return
+            
         msg = "🏆 <b>[ 졸업 명예의 전당 ]</b>\n"
         keyboard = [[InlineKeyboardButton(f"{h['end_date']} | {h['ticker']} (+${h['profit']:.0f})", callback_data=f"HIST:VIEW:{h['id']}")] for h in history]
         await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     async def cmd_mode(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         active_tickers = self.cfg.get_active_tickers()
 
         report = "📊 <b>[ 자율주행 변동성 마스터 지표 상세 분석 ]</b>\n\n"
@@ -872,13 +917,17 @@ class TelegramController:
         await update.message.reply_text(report, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     async def cmd_reset(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         active_tickers = self.cfg.get_active_tickers()
         msg, markup = self.view.get_reset_menu(active_tickers)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode='HTML')
 
     async def cmd_seed(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         msg = "💵 <b>[ 종목별 시드머니 관리 ]</b>\n\n"
         keyboard = []
         for t in self.cfg.get_active_tickers():
@@ -892,12 +941,15 @@ class TelegramController:
         await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     async def cmd_ticker(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         msg, markup = self.view.get_ticker_menu(self.cfg.get_active_tickers())
         await update.message.reply_text(msg, reply_markup=markup, parse_mode='HTML')
 
     async def cmd_settlement(self, update, context):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
         
         active_tickers = self.cfg.get_active_tickers()
         atr_data = {}
@@ -907,19 +959,6 @@ class TelegramController:
         
         est = pytz.timezone('US/Eastern')
         now_est = datetime.datetime.now(est)
-        
-        is_sniper_active_time = False
-        try:
-            nyse = mcal.get_calendar('NYSE')
-            schedule = nyse.schedule(start_date=now_est.date(), end_date=now_est.date())
-            if not schedule.empty:
-                market_open = schedule.iloc[0]['market_open'].astimezone(est)
-                switch_time = market_open + datetime.timedelta(minutes=50) # 10:20 EST
-                if now_est >= switch_time:
-                    is_sniper_active_time = True
-        except Exception:
-            if now_est.weekday() < 5 and now_est.time() >= datetime.time(10, 20):
-                is_sniper_active_time = True
 
         for t in active_tickers:
             atr_data[t] = (0.0, 0.0)
@@ -930,7 +969,9 @@ class TelegramController:
         await status_msg.edit_text(msg, reply_markup=markup, parse_mode='HTML')
 
     async def cmd_version(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         history_data = self.cfg.get_full_version_history()
         msg, markup = self.view.get_version_message(history_data, page_index=None)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode='HTML')
@@ -952,7 +993,9 @@ class TelegramController:
                         if os.path.exists("data/queue_ledger.json"):
                             with open("data/queue_ledger.json", "r", encoding='utf-8') as f:
                                 q_data = json.load(f).get(ticker, [])
-                    except: pass
+                    except Exception:
+                        pass
+                        
                 msg, markup = self.view.get_queue_management_menu(ticker, q_data)
                 await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
 
@@ -1029,7 +1072,8 @@ class TelegramController:
                 try:
                     with open("data/queue_ledger.json", "r") as f:
                         q_data = json.load(f).get(ticker, [])
-                except: pass
+                except Exception:
+                    pass
             
             qty, price = 0, 0.0
             for item in q_data:
@@ -1057,7 +1101,7 @@ class TelegramController:
                 if action == "DEL_Q":
                     new_q = [item for item in ticker_q if item.get('date') != target_date]
                     await self._verify_and_update_queue(ticker, new_q, context, query.message.chat_id)
-                    await query.answer(f"✅ 삭제 완료.", show_alert=False)
+                    await query.answer("✅ 삭제 완료.", show_alert=False)
                     
                     msg, markup = self.view.get_queue_management_menu(ticker, new_q)
                     await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
@@ -1069,9 +1113,9 @@ class TelegramController:
                     
                     prompt = f"✏️ <b>[{ticker} 지층 수정 모드]</b>\n"
                     prompt += f"선택하신 <b>[{short_date}]</b> 지층을 재설정합니다.\n\n"
-                    prompt += f"새로운 <b>[수량]</b>과 <b>[평단가]</b>를 띄어쓰기로 입력하세요.\n"
-                    prompt += f"(예: <code>229 52.16</code>)\n\n"
-                    prompt += f"<i>(입력을 취소하려면 숫자 이외의 문자를 보내주세요)</i>"
+                    prompt += "새로운 <b>[수량]</b>과 <b>[평단가]</b>를 띄어쓰기로 입력하세요.\n"
+                    prompt += "(예: <code>229 52.16</code>)\n\n"
+                    prompt += "<i>(입력을 취소하려면 숫자 이외의 문자를 보내주세요)</i>"
                     await query.edit_message_text(prompt, parse_mode='HTML')
             except Exception as e:
                 await query.answer(f"❌ 처리 중 에러 발생: {e}", show_alert=True)
@@ -1116,7 +1160,8 @@ class TelegramController:
                         b_data = [r for r in b_data if r.get('ticker') != ticker]
                         with open(backup_file, 'w', encoding='utf-8') as f:
                             json.dump(b_data, f, ensure_ascii=False, indent=4)
-                    except: pass
+                    except Exception:
+                        pass
                 
                 q_file = "data/queue_ledger.json"
                 if os.path.exists(q_file):
@@ -1127,7 +1172,8 @@ class TelegramController:
                             del q_data[ticker]
                         with open(q_file, 'w', encoding='utf-8') as f:
                             json.dump(q_data, f, ensure_ascii=False, indent=4)
-                    except: pass
+                    except Exception:
+                        pass
                     
                 if getattr(self, 'queue_ledger', None) and hasattr(self.queue_ledger, 'queues') and ticker in self.queue_ledger.queues:
                     del self.queue_ledger.queues[ticker]
@@ -1164,7 +1210,7 @@ class TelegramController:
                     qty, avg, invested, sold = self.cfg.calculate_holdings(target['ticker'], target['trades'])
                     msg, markup = self.view.create_ledger_dashboard(target['ticker'], qty, avg, invested, sold, target['trades'], 0, 0, is_history=True)
                     await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
-            elif sub == "LIST": 
+            elif sub == "LIST":
                 await self.cmd_history(update, context)
             elif sub == "IMG":
                 ticker = data[2]
@@ -1190,7 +1236,7 @@ class TelegramController:
                             await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo)
                 except Exception as e:
                     logging.error(f"📸 👑 졸업 이미지 생성/발송 실패: {e}")
-                    await context.bot.send_message(update.effective_chat.id, f"❌ 이미지 렌더링 모듈 장애 발생.", parse_mode='HTML')
+                    await context.bot.send_message(update.effective_chat.id, "❌ 이미지 렌더링 모듈 장애 발생.", parse_mode='HTML')
             
         elif action == "EXEC":
             t = sub
@@ -1199,7 +1245,8 @@ class TelegramController:
             await query.edit_message_text(f"🚀 {t} 수동 강제 전송 시작 (교차 분리)...")
             async with self.tx_lock:
                 cash, holdings = self.broker.get_account_balance()
-                if holdings is None: return await query.edit_message_text("❌ API 통신 오류로 주문을 실행할 수 없습니다.")
+                if holdings is None:
+                    return await query.edit_message_text("❌ API 통신 오류로 주문을 실행할 수 없습니다.")
                     
                 _, allocated_cash = self._calculate_budget_allocation(cash, self.cfg.get_active_tickers())
                 h = holdings.get(t, {'qty':0, 'avg':0})
@@ -1209,7 +1256,6 @@ class TelegramController:
                 safe_avg = float(h.get('avg') or 0.0)
                 safe_qty = int(float(h.get('qty') or 0))
 
-                # NEW: [V25.06 롤오버 패치] 수동 전송 시 장외 시간일 경우 전일 종가를 최신 현재가로 치환하여 타점 왜곡 방지
                 status_code, _ = self._get_market_status()
                 if status_code in ["AFTER", "CLOSE", "PRE"] and curr_p > 0:
                     prev_c = curr_p
@@ -1236,7 +1282,6 @@ class TelegramController:
                             if sell_qty > 0:
                                 loc_orders.append({'side': 'SELL', 'qty': sell_qty, 'price': target_sell_price, 'type': 'LOC', 'desc': f'예방적 매도(Pop{idx+1})'})
                     
-                    # 🚨 MODIFIED: [V25.13 디커플링 스왑 패치] 0주 보유 시 Buy1(/0.935)과 Buy2(*0.999) 변수 스왑.
                     if prev_c > 0:
                         b1_price = round(prev_c / 0.935 if v_rev_q_qty == 0 else prev_c * 0.995, 2)
                         b2_price = round(prev_c * 0.999 if v_rev_q_qty == 0 else prev_c * 0.9725, 2)
@@ -1249,7 +1294,6 @@ class TelegramController:
                         if b2_qty > 0:
                             loc_orders.append({'side': 'BUY', 'qty': b2_qty, 'price': b2_price, 'type': 'LOC', 'desc': '예방적 매수(Buy2)'})
                             
-                        # 0주 새출발이든 보유 상태이든 5개의 줍줍(Grid) 타점 전송 목록에 동시 장전
                         if b2_qty > 0 and b2_price > 0:
                             for n in range(1, 6):
                                 grid_p = round(half_portion_cash / (b2_qty + n), 2)
@@ -1261,7 +1305,9 @@ class TelegramController:
                     for o in loc_orders:
                         res = self.broker.send_order(t, o['side'], o['qty'], o['price'], o['type'])
                         is_success = res.get('rt_cd') == '0'
-                        if not is_success: all_success = False
+                        if not is_success:
+                            all_success = False
+                            
                         err_msg = res.get('msg1', '오류')
                         status_icon = '✅' if is_success else f'❌({err_msg})'
                         msg += f"└ {o['desc']} {o['qty']}주 (${o['price']}): {status_icon}\n"
@@ -1289,7 +1335,9 @@ class TelegramController:
                 for o in plan.get('core_orders', []):
                     res = self.broker.send_order(t, o['side'], o['qty'], o['price'], o['type'])
                     is_success = res.get('rt_cd') == '0'
-                    if not is_success: all_success = False
+                    if not is_success:
+                        all_success = False
+                        
                     err_msg = res.get('msg1', '오류')
                     status_icon = '✅' if is_success else f'❌({err_msg})'
                     msg += f"└ 1차 필수: {o['desc']} {o['qty']}주: {status_icon}\n"
@@ -1321,8 +1369,10 @@ class TelegramController:
                     return
                 self.cfg.set_upward_sniper_mode(ticker, False) 
                 
-            if new_ver == "V_REV": new_ver_display = "V_REV 역추세 하이브리드"
-            else: new_ver_display = "V14 무매4"
+            if new_ver == "V_REV":
+                new_ver_display = "V_REV 역추세 하이브리드"
+            else:
+                new_ver_display = "V14 무매4"
             
             self.cfg.set_version(ticker, new_ver)
             
@@ -1402,19 +1452,50 @@ class TelegramController:
             ticker = data[2]
             self.user_states[update.effective_chat.id] = f"CONF_{sub}_{ticker}"
             
-            if sub == "SPLIT": ko_name = "분할 횟수"
-            elif sub == "TARGET": ko_name = "목표 수익률(%)"
-            elif sub == "COMPOUND": ko_name = "자동 복리율(%)"
-            elif sub == "STOCK_SPLIT": ko_name = "액면 분할/병합 비율 (예: 10분할은 10, 10병합은 0.1)"
-            else: ko_name = "값"
+            if sub == "SPLIT":
+                ko_name = "분할 횟수"
+            elif sub == "TARGET":
+                ko_name = "목표 수익률(%)"
+            elif sub == "COMPOUND":
+                ko_name = "자동 복리율(%)"
+            elif sub == "STOCK_SPLIT":
+                ko_name = "액면 분할/병합 비율 (예: 10분할은 10, 10병합은 0.1)"
+            else:
+                ko_name = "값"
             
             await context.bot.send_message(update.effective_chat.id, f"⚙️ [{ticker}] {ko_name} 입력 (숫자만):")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self._is_admin(update): return
+        if not self._is_admin(update):
+            return
+            
         chat_id = update.effective_chat.id
+        text = update.message.text.strip() if update.message.text else ""
+        
+        # MODIFIED: [V25.05 텍스트 다이렉트 라우터] 하단 고정 키보드 한글 신호 증발 방어망 이식
+        if "통합 지시서" in text or "지시서 조회" in text:
+            return await self.cmd_sync(update, context)
+        elif "장부 동기화" in text or "장부 조회" in text:
+            return await self.cmd_record(update, context)
+        elif "명예의 전당" in text:
+            return await self.cmd_history(update, context)
+        elif "코어 스위칭" in text or "전술 설정" in text:
+            return await self.cmd_settlement(update, context)
+        elif "시드머니" in text or "시드 변경" in text or "시드 관리" in text:
+            return await self.cmd_seed(update, context)
+        elif "종목 선택" in text:
+            return await self.cmd_ticker(update, context)
+        elif "스나이퍼" in text:
+            return await self.cmd_mode(update, context)
+        elif "버전" in text or "업데이트 내역" in text:
+            return await self.cmd_version(update, context)
+        elif "비상 해제" in text:
+            return await self.cmd_reset(update, context)
+
         state = self.user_states.get(chat_id)
-        if not state: return
+        
+        if not state:
+            return
 
         try:
             if state.startswith("EDITQ_"):
@@ -1422,7 +1503,7 @@ class TelegramController:
                 ticker = parts[1]
                 target_date = parts[2]
                 
-                input_parts = update.message.text.strip().split()
+                input_parts = text.split()
                 if len(input_parts) != 2:
                     del self.user_states[chat_id]
                     return await update.message.reply_text("❌ 입력 형식 오류입니다. 띄어쓰기로 수량과 평단가를 입력해주세요. (수정 취소됨)")
@@ -1464,11 +1545,13 @@ class TelegramController:
                 await update.message.reply_text(f"✅ <b>[{ticker}] 지층 정밀 수정 완료!</b>\n▫️ {short_date} | {qty}주 | ${price:.2f}\n▫️ 확인: 장부 하단 🗄️ 버튼", parse_mode='HTML')
                 return
 
-            val = float(update.message.text.strip())
+            val = float(text)
             parts = state.split("_")
             
             if state.startswith("SEED"):
-                if val < 0: return await update.message.reply_text("❌ 오류: 시드머니는 0 이상이어야 합니다.")
+                if val < 0:
+                    return await update.message.reply_text("❌ 오류: 시드머니는 0 이상이어야 합니다.")
+                    
                 action, ticker = parts[1], parts[2]
                 curr = self.cfg.get_seed(ticker)
                 new_v = curr + val if action == "ADD" else (max(0, curr - val) if action == "SUB" else val)
@@ -1476,26 +1559,34 @@ class TelegramController:
                 await update.message.reply_text(f"✅ [{ticker}] 시드 변경: ${new_v:,.0f}")
                 
             elif state.startswith("CONF_SPLIT"):
-                if val < 1: return await update.message.reply_text("❌ 오류: 분할 횟수는 1 이상이어야 합니다.")
+                if val < 1:
+                    return await update.message.reply_text("❌ 오류: 분할 횟수는 1 이상이어야 합니다.")
+                    
                 ticker = parts[2]
                 d = self.cfg._load_json(self.cfg.FILES["SPLIT"], self.cfg.DEFAULT_SPLIT)
-                d[ticker] = val; self.cfg._save_json(self.cfg.FILES["SPLIT"], d)
+                d[ticker] = val
+                self.cfg._save_json(self.cfg.FILES["SPLIT"], d)
                 await update.message.reply_text(f"✅ [{ticker}] 분할: {int(val)}회")
                 
             elif state.startswith("CONF_TARGET"):
                 ticker = parts[2]
                 d = self.cfg._load_json(self.cfg.FILES["PROFIT_CFG"], self.cfg.DEFAULT_TARGET)
-                d[ticker] = val; self.cfg._save_json(self.cfg.FILES["PROFIT_CFG"], d)
+                d[ticker] = val
+                self.cfg._save_json(self.cfg.FILES["PROFIT_CFG"], d)
                 await update.message.reply_text(f"✅ [{ticker}] 목표: {val}%")
                 
             elif state.startswith("CONF_COMPOUND"):
-                if val < 0: return await update.message.reply_text("❌ 오류: 복리율은 0 이상이어야 합니다.")
+                if val < 0:
+                    return await update.message.reply_text("❌ 오류: 복리율은 0 이상이어야 합니다.")
+                    
                 ticker = parts[2]
                 self.cfg.set_compound_rate(ticker, val)
                 await update.message.reply_text(f"✅ [{ticker}] 졸업 시 자동 복리율: {val}%")
                 
             elif state.startswith("CONF_STOCK_SPLIT"):
-                if val <= 0: return await update.message.reply_text("❌ 오류: 액면 보정 비율은 0보다 커야 합니다.")
+                if val <= 0:
+                    return await update.message.reply_text("❌ 오류: 액면 보정 비율은 0보다 커야 합니다.")
+                    
                 ticker = parts[2]
                 self.cfg.apply_stock_split(ticker, val)
                 
