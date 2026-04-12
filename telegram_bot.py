@@ -7,12 +7,12 @@
 # 🚨 [V25.01 UI 교정] /sync 지시서 내 AVWAP 잉여 예산 표기 오류 수정 (팩트 동기화)
 # 🚨 [V25.02 스냅샷 패치] V-REV 0주 스윕 시 장부 소각 전 메모리 스냅샷 캡처 및 졸업카드 렌더링 연결
 # 🚨 [V25.06 롤오버 및 복리 패치] 장외 시간 타점 왜곡 방어(YF 치환) 및 V-REV 스윕 익절 복리(Seed) 100% 자동 증식 이식
-# 🚨 [V25.07 수학적 교정] 구버전 승수 잔재 완전 철거 및 최신 디커플링 공식(0.999 및 ÷0.935) 팩트 주입
+# 🚨 [V25.07 수학적 교정] 구버전 승수 잔재 완전 철거 및 최신 디커플링 공식(0.999 및 /0.935) 팩트 주입
 # 🚨 [V25.10 줍줍 복원 패치] /sync 및 수동 EXEC 시 V-REV 줍줍(Grid) 덫 누락 완벽 복구
 # 🚨 [V25.11 긴급 버그픽스] cmd_sync 라우터 내 prev_c 참조 변수명을 safe_prev_close로 팩트 교정 완료
 # 🚨 [V25.13 디커플링 스왑 패치] 0주 보유 시 Buy1(/0.935)과 Buy2(*0.999)의 변수를 근본적으로 교환하여 고가->저가 순서 완벽 통일
 # 🚨 [전면 교정 패치] 파일 전역의 F841, E722, F541, E701 에러 100% 일괄 소각 완료
-# 🚨 [치명적 붕괴 복구] 아키텍처 중복 라우터 제거 및 cmd_settlement 빈 블록 적출 준비 완료
+# 🚨 [컴파일 붕괴 방어] NBSP(유령 공백) 전면 소각 및 4칸 들여쓰기 팩트 정규화 완료
 # ==========================================================
 import logging
 import datetime
@@ -843,8 +843,8 @@ class TelegramController:
 # 🚨 [V25.06 롤오버 패치] 수동 EXEC 시 장외시간 낡은 전일종가(T-2)를 최신 현재가(T-1)로 치환(Overwrite)하여 타점 불일치 해결
 # 🚨 [V25.07 수학적 교정] 구버전 승수 잔재 완전 철거 및 최신 디커플링 공식(0.999 및 /0.935) 팩트 주입
 # 🚨 [V25.10 줍줍 복원 패치] 수동 EXEC 시 5개의 줍줍(Grid) LOC 주문이 KIS 서버로 정상 장전되도록 격발 알고리즘 복원
-# 🚨 [전면 교정 패치] 파일 전역의 F841, E722, F541, E701 에러 100% 일괄 소각 완료
 # 🚨 [치명적 붕괴 복구] cmd_settlement 내 빈 블록(Empty Block) 100% 적출 완료 (IndentationError 해결)
+# 🚨 [V25.05 텍스트 라우터] 하단 고정 키보드 한글 신호 증발을 막기 위한 다이렉트 패스망 이식 완료
 # ==========================================================
 
     async def cmd_history(self, update, context):
@@ -1470,6 +1470,28 @@ class TelegramController:
             return
             
         chat_id = update.effective_chat.id
+        text = update.message.text.strip() if update.message.text else ""
+        
+        # MODIFIED: [V25.05 텍스트 다이렉트 라우터] 하단 고정 키보드 한글 신호 증발 방어망 이식
+        if "통합 지시서" in text or "지시서 조회" in text:
+            return await self.cmd_sync(update, context)
+        elif "장부 동기화" in text or "장부 조회" in text:
+            return await self.cmd_record(update, context)
+        elif "명예의 전당" in text:
+            return await self.cmd_history(update, context)
+        elif "코어 스위칭" in text or "전술 설정" in text:
+            return await self.cmd_settlement(update, context)
+        elif "시드머니" in text or "시드 변경" in text or "시드 관리" in text:
+            return await self.cmd_seed(update, context)
+        elif "종목 선택" in text:
+            return await self.cmd_ticker(update, context)
+        elif "스나이퍼" in text:
+            return await self.cmd_mode(update, context)
+        elif "버전" in text or "업데이트 내역" in text:
+            return await self.cmd_version(update, context)
+        elif "비상 해제" in text:
+            return await self.cmd_reset(update, context)
+
         state = self.user_states.get(chat_id)
         
         if not state:
@@ -1481,7 +1503,7 @@ class TelegramController:
                 ticker = parts[1]
                 target_date = parts[2]
                 
-                input_parts = update.message.text.strip().split()
+                input_parts = text.split()
                 if len(input_parts) != 2:
                     del self.user_states[chat_id]
                     return await update.message.reply_text("❌ 입력 형식 오류입니다. 띄어쓰기로 수량과 평단가를 입력해주세요. (수정 취소됨)")
@@ -1523,7 +1545,7 @@ class TelegramController:
                 await update.message.reply_text(f"✅ <b>[{ticker}] 지층 정밀 수정 완료!</b>\n▫️ {short_date} | {qty}주 | ${price:.2f}\n▫️ 확인: 장부 하단 🗄️ 버튼", parse_mode='HTML')
                 return
 
-            val = float(update.message.text.strip())
+            val = float(text)
             parts = state.split("_")
             
             if state.startswith("SEED"):

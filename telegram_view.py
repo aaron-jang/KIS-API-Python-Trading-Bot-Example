@@ -7,6 +7,8 @@
 # 3. AVWAP 하이브리드 토글 및 2단계 경고 UI 완벽 연결
 # 4. Ruff E701, E722 등 잔여 린팅 에러 원천 차단 상태로 락온
 # 🚨 [V25.05 UI 패치] 시작화면(/start) 브리핑 텍스트 서머타임 ON/OFF 동적 렌더링 팩트 교정
+# 🚨 [V25.06 버전 패치] /version 명령어 Type Mismatch 버그 해결 (문자열 동적 파싱 로직 이식)
+# 🚨 [V25.06 버전 UX 패치] 최신 버전이 가장 마지막 줄에 출력되도록 정배열 유지 및 초기 진입 시 마지막 페이지 렌더링 강제
 # ==========================================================
 import os
 import math
@@ -156,7 +158,7 @@ class TelegramView:
         msg += "⚠️ <b>[ 파괴적 제약 사항 ]</b>\n"
         msg += "1. 기존 V14의 상방 스나이퍼 기능은 즉시 영구 셧다운됩니다.\n"
         msg += "2. 당일 -1% 하드스탑(손절) 또는 +1% 스퀴즈(익절) 또는 15:55 타임스탑 강제 덤핑이 적용됩니다.\n"
-        msg += "3. V-REV 큐(Queue)와는 물량과 평단가가 100% 분리되어 시스템 메모리 단독으로 연산됩니다.\n\n"
+        msg += "3. V-REV 큐(Queue)와는 물량과 평단가가 100% 분리되어 시스템 메모 단독으로 연산됩니다.\n\n"
         msg += "포트폴리오 매니저의 최종 승인을 대기합니다."
         
         keyboard = [
@@ -169,7 +171,9 @@ class TelegramView:
         ITEMS_PER_PAGE = 5
         total_pages = max(1, (len(history_data) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
         
-        current_page = 0 if page_index is None else page_index
+        # MODIFIED: [V25.06 UX 패치] /version 최초 진입 시(page_index=None) 가장 최신 데이터가 있는 마지막 페이지 강제 렌더링
+        current_page = (total_pages - 1) if page_index is None else page_index
+        
         if current_page < 0:
             current_page = 0
         if current_page >= total_pages:
@@ -177,16 +181,33 @@ class TelegramView:
             
         start_idx = current_page * ITEMS_PER_PAGE
         end_idx = start_idx + ITEMS_PER_PAGE
+        
+        # 원본 데이터의 오름차순(과거->최신) 배열 순서를 100% 유지
         page_items = history_data[start_idx:end_idx]
 
         msg = "🚀 <b>[ PIPIOS 퀀트 엔진 패치노트 ]</b>\n"
-        msg += "▫️ 현재 시스템: <code>V25.05 하이브리드 코어</code>\n\n"
+        msg += "▫️ 현재 시스템: <code>V25.06 하이브리드 코어</code>\n\n"
         
         for item in page_items:
-            msg += f"💠 <b>{item['version']}</b> ({item['date']})\n"
-            for desc in item['desc']:
-                msg += f"▫️ {desc}\n"
-            msg += "\n"
+            if isinstance(item, str):
+                parts = item.split(" ", 2)
+                if len(parts) >= 3:
+                    ver = parts[0]
+                    date_str = parts[1].strip("[]")
+                    desc = parts[2]
+                else:
+                    ver = "V??"
+                    date_str = "-"
+                    desc = item
+                msg += f"💠 <b>{ver}</b> ({date_str})\n"
+                msg += f"▫️ {desc}\n\n"
+            elif isinstance(item, dict):
+                ver = item.get('version', 'V??')
+                date_str = item.get('date', '-')
+                msg += f"💠 <b>{ver}</b> ({date_str})\n"
+                for desc in item.get('desc', []):
+                    msg += f"▫️ {desc}\n"
+                msg += "\n"
             
         msg += f"📄 <i>페이지 {current_page + 1} / {total_pages}</i>"
 
