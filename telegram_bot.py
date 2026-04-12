@@ -11,8 +11,7 @@
 # 🚨 [V25.10 줍줍 복원 패치] /sync 및 수동 EXEC 시 V-REV 줍줍(Grid) 덫 누락 완벽 복구
 # 🚨 [V25.11 긴급 버그픽스] cmd_sync 라우터 내 prev_c 참조 변수명을 safe_prev_close로 팩트 교정 완료
 # 🚨 [V25.13 디커플링 스왑 패치] 0주 보유 시 Buy1(/0.935)과 Buy2(*0.999)의 변수를 근본적으로 교환하여 고가->저가 순서 완벽 통일
-# 🚨 [전면 교정 패치] 파일 전역의 F841, E722, F541, E701 에러 100% 일괄 소각 완료
-# 🚨 [컴파일 붕괴 방어] NBSP(유령 공백) 전면 소각 및 4칸 들여쓰기 팩트 정규화 완료
+# 🚨 [V25.14 수동 분할 LOC 패치] 승승장군님 지시에 따른 KIS 서버자동주문용 1층 / 상위층 타점 완벽 디커플링 렌더링 개편
 # ==========================================================
 import logging
 import datetime
@@ -385,24 +384,31 @@ class TelegramController:
        
                     one_portion_cash = seed * 0.15
                     plan['one_portion'] = one_portion_cash
-                    one_portion_qty = math.floor(one_portion_cash / curr) if curr > 0 else 0
                     half_portion_cash = one_portion_cash * 0.5
                     
-                    if q_list:
-                        recent_lots = list(reversed(q_list))[:3]
-                        for idx, lot in enumerate(recent_lots):
-                            if idx == 0:
-                                target_sell_price = round(lot.get('price', safe_prev_close) * 1.006, 2)
-                            else:
-                                target_sell_price = round(actual_avg * 1.005, 2)
-                                
-                            sell_qty = min(lot['qty'], one_portion_qty) if one_portion_qty > 0 else lot['qty']
-                            v_rev_guidance += f" 🔵 매도{idx+1}(Pop{idx+1}): ${target_sell_price:.2f} 돌파 시 <b>{sell_qty}주</b>\n"
+                    # MODIFIED: [V25.14 Decoupling] 승승장군님 선택 B: 서버자동주문(수동)을 위한 지층별 타점 분리 렌더링
+                    if q_list and actual_qty > 0:
+                        l1_qty = q_list[-1].get('qty', 0)
+                        l1_price = q_list[-1].get('price', safe_prev_close)
                         
-                        if len(q_list) > 3:
-                            v_rev_guidance += f"  <i>... (이하 {len(q_list)-3}개 로트 대기 중)</i>\n"
+                        # 1. 1층 단독 탈출 타점
+                        target_l1 = round(l1_price * 1.006, 2)
+                        v_rev_guidance += f" 🔵 [1층 단독] ${target_l1:.2f} 돌파 시 <b>{l1_qty}주</b> 매도\n"
+                        
+                        # 2. 상위층 악성 재고 분리 타점
+                        upper_qty = actual_qty - l1_qty
+                        if upper_qty > 0:
+                            # 1층 데이터를 제외한 순수 악성 재고 원금 역산
+                            upper_invested = (actual_qty * actual_avg) - (l1_qty * l1_price)
+                            upper_avg = upper_invested / upper_qty if upper_invested > 0 else actual_avg
+                            target_upper = round(upper_avg * 1.005, 2)
+                            v_rev_guidance += f" 🔵 [상위 재고] ${target_upper:.2f} 돌파 시 <b>{upper_qty}주</b> 매도\n"
+                            
+                            # 3. 잭팟 스윕 타점 (선택 옵션)
+                            target_jackpot = round(actual_avg * 1.01, 2)
+                            v_rev_guidance += f" 🎯 [전체 잭팟] ${target_jackpot:.2f} 돌파 시 <b>{actual_qty}주</b> (옵션)\n"
                     else:
-                        v_rev_guidance += " 🔵 매도(Pop): 대기 물량 없음 (관망)\n"
+                        v_rev_guidance += " 🔵 감시 매도: 대기 물량 없음 (관망)\n"
                     
                     if safe_prev_close > 0:
                         b1_price = round(safe_prev_close / 0.935 if v_rev_q_qty == 0 else safe_prev_close * 0.995, 2)
@@ -845,6 +851,7 @@ class TelegramController:
 # 🚨 [V25.10 줍줍 복원 패치] 수동 EXEC 시 5개의 줍줍(Grid) LOC 주문이 KIS 서버로 정상 장전되도록 격발 알고리즘 복원
 # 🚨 [치명적 붕괴 복구] cmd_settlement 내 빈 블록(Empty Block) 100% 적출 완료 (IndentationError 해결)
 # 🚨 [V25.05 텍스트 라우터] 하단 고정 키보드 한글 신호 증발을 막기 위한 다이렉트 패스망 이식 완료
+# 🚨 [V25.14 분할 LOC 패치] 수동 EXEC 시 1층/상위층 완벽 분리 LOC 전송 렌더링 팩트 주입
 # ==========================================================
 
     async def cmd_history(self, update, context):
@@ -1260,6 +1267,7 @@ class TelegramController:
                 if status_code in ["AFTER", "CLOSE", "PRE"] and curr_p > 0:
                     prev_c = curr_p
 
+                # MODIFIED: [V25.14 Decoupling] 승승장군님 지시에 따라 수동 장전(EXEC) 시 1층과 상위 악성 재고를 완벽히 분리하여 2개의 LOC 덫으로 장전
                 if ver == "V_REV":
                     if not getattr(self, 'queue_ledger', None):
                         from queue_ledger import QueueLedger
@@ -1270,17 +1278,23 @@ class TelegramController:
                     rev_budget = float(self.cfg.get_seed(t) or 0.0) * 0.15
                     
                     half_portion_cash = rev_budget * 0.5
-                    one_portion_qty = math.floor(rev_budget / curr_p) if curr_p > 0 else 0
                     
                     loc_orders = []
                     
-                    if q_data:
-                        recent_lots = list(reversed(q_data))[:3]
-                        for idx, lot in enumerate(recent_lots):
-                            target_sell_price = round(lot.get('price', prev_c) * 1.006, 2) if idx == 0 else round(safe_avg * 1.005, 2)
-                            sell_qty = min(lot['qty'], one_portion_qty) if one_portion_qty > 0 else lot['qty']
-                            if sell_qty > 0:
-                                loc_orders.append({'side': 'SELL', 'qty': sell_qty, 'price': target_sell_price, 'type': 'LOC', 'desc': f'예방적 매도(Pop{idx+1})'})
+                    if q_data and safe_qty > 0:
+                        l1_qty = q_data[-1].get('qty', 0)
+                        l1_price = q_data[-1].get('price', prev_c)
+                        target_l1 = round(l1_price * 1.006, 2)
+                        
+                        if l1_qty > 0:
+                            loc_orders.append({'side': 'SELL', 'qty': l1_qty, 'price': target_l1, 'type': 'LOC', 'desc': '[1층 단독]'})
+                            
+                        upper_qty = safe_qty - l1_qty
+                        if upper_qty > 0:
+                            upper_invested = (safe_qty * safe_avg) - (l1_qty * l1_price)
+                            upper_avg = upper_invested / upper_qty if upper_invested > 0 else safe_avg
+                            target_upper = round(upper_avg * 1.005, 2)
+                            loc_orders.append({'side': 'SELL', 'qty': upper_qty, 'price': target_upper, 'type': 'LOC', 'desc': '[상위 재고]'})
                     
                     if prev_c > 0:
                         b1_price = round(prev_c / 0.935 if v_rev_q_qty == 0 else prev_c * 0.995, 2)

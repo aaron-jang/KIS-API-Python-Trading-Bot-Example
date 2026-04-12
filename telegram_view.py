@@ -9,14 +9,35 @@
 # 🚨 [V25.05 UI 패치] 시작화면(/start) 브리핑 텍스트 서머타임 ON/OFF 동적 렌더링 팩트 교정
 # 🚨 [V25.06 버전 패치] /version 명령어 Type Mismatch 버그 해결 (문자열 동적 파싱 로직 이식)
 # 🚨 [V25.06 버전 UX 패치] 최신 버전이 가장 마지막 줄에 출력되도록 정배열 유지 및 초기 진입 시 마지막 페이지 렌더링 강제
+# 🚨 [V25.07 런타임 붕괴 방어] PIL 이미지 라이브러리 임포트 및 폰트 로더(_load_best_font) 100% 무손실 복구
 # ==========================================================
 import os
 import math
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from PIL import Image, ImageDraw, ImageFont  # NEW: [V25.07] 런타임 붕괴 방어용 임포트 복구
 
 class TelegramView:
     def __init__(self):
-        pass
+        # NEW: [V25.07] OS별 호환 폰트 경로 및 이미지 렌더링 초기화 복구
+        self.bold_font_paths = [
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", 
+            "C:/Windows/Fonts/malgunbd.ttf", 
+            "AppleGothic.ttf"
+        ]
+        self.reg_font_paths = [
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", 
+            "C:/Windows/Fonts/malgun.ttf", 
+            "AppleGothic.ttf"
+        ]
+
+    # NEW: [V25.07] 폰트 로드 실패 시 봇 다운을 막아주는 안전망 폴백(Fallback) 메서드
+    def _load_best_font(self, font_paths, size):
+        for path in font_paths:
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
 
     # MODIFIED: [V25.05 UI 패치] target_hour 기반 서머타임 ON/OFF 동적 판별 및 줄바꿈/텍스트 100% 일치화
     def get_start_message(self, target_hour, season_icon, latest_version):
@@ -35,7 +56,7 @@ class TelegramView:
         msg += "▶️ /sync : 📜 통합 지시서 조회\n"
         msg += "▶️ /record : 📊 장부 동기화 및 조회\n"
         msg += "▶️ /history : 🏆 졸업 명예의 전당\n"
-        msg += "▶️ /settlement : ⚙️ 코어 스위칭 / 전술 설정\n"
+        msg += "▶️ /settlement : ⚙️ 코어스위칭/전술설정\n"
         msg += "▶️ /seed : 💵 개별 시드머니 관리\n"
         msg += "▶️ /ticker : 🔄 운용 종목 선택\n"
         msg += "▶️ /mode : 🎯 상방 스나이퍼 ON/OFF\n"
@@ -223,6 +244,7 @@ class TelegramView:
         keyboard.append([InlineKeyboardButton("❌ 닫기", callback_data="RESET:CANCEL")])
         
         return msg, InlineKeyboardMarkup(keyboard)
+
 # ==========================================================
 # [telegram_view.py] - Part 2/2 부 (하반부)
 # ⚠️ 수술 내역: 
