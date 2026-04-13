@@ -9,6 +9,7 @@
 # 🚨 [V25.20 핫픽스] 잭팟 스윕 피니셔 MOC 락다운 충돌 방어 및 순수 매도 가능 잔량 디커플링 연산 이식
 # 🚨 [V25.24 타임라인 시프트] VWAP 슬라이싱 시간을 3분 앞당겨(장 마감 33분 전~4분 전) 막판 미체결 맹점 원천 차단
 # 🚨 [V25.25 에러 팩트 보고] 애프터마켓 로터리 덫 거절 사유 텔레그램 타전 방어막 신설
+# 🚨 [V25.26 락다운 확장] 당일 0주 졸업 후 유령 매수(Phantom Buy) 방지를 위한 Daily Buy-Lock 완벽 이식
 # ==========================================================
 import os
 import logging
@@ -178,6 +179,7 @@ async def scheduled_vwap_init_and_cancel(context):
 # 🚨 [V25.03 수술] 시간 앵커(market_close) 기반 동적 역산 알고리즘 도입
 # 🚨 [V25.20 핫픽스] 잭팟 스윕 피니셔 MOC 락다운 충돌 방어 및 순수 매도 가능 잔량 디커플링 연산 이식
 # 🚨 [V25.24 타임라인 시프트] VWAP 3분 앞당김 (33분 전 ~ 4분 전)
+# 🚨 [V25.26 락다운 확장] 당일 졸업 후 유령 매수(Phantom Buy) 방지 완벽 이식
 # ==========================================================
 async def scheduled_vwap_trade(context):
     if not is_market_open(): return
@@ -243,6 +245,10 @@ async def scheduled_vwap_trade(context):
                         except Exception as e:
                             logging.error(f"🚨 자가 치유 Nuke 실패: {e}")
                             continue
+
+                    # 💡 [V25.26 핵심 수술] 당일 이미 스윕 피니셔나 일반 슬라이싱으로 0주(졸업)가 되었다면 오늘 매매 완전 종료 (유령 매수 방지)
+                    if vwap_cache.get(f"REV_{t}_sweep_finished"):
+                        continue
                             
                     strategy_rev = app_data.get('strategy_rev')
                     queue_ledger = app_data.get('queue_ledger')
@@ -254,6 +260,15 @@ async def scheduled_vwap_trade(context):
                     
                     q_data = queue_ledger.get_queue(t)
                     total_q = sum(item.get("qty", 0) for item in q_data)
+                    
+                    # 💡 [V25.26 핵심 수술] 스윕 피니셔가 아니더라도, 큐에 로트가 0주로 파악되면(오늘 익절 완료) 즉각 락다운
+                    if vwap_cache.get(f"REV_{t}_was_holding", False) and total_q == 0:
+                        vwap_cache[f"REV_{t}_sweep_finished"] = True
+                        continue
+                        
+                    if total_q > 0:
+                        vwap_cache[f"REV_{t}_was_holding"] = True
+                        
                     avg_price = (sum(item.get("qty", 0) * item.get("price", 0.0) for item in q_data) / total_q) if total_q > 0 else 0.0
                     jackpot_trigger = avg_price * 1.010
                     
@@ -279,6 +294,7 @@ async def scheduled_vwap_trade(context):
                             sweep_type = "1층 잔여물량"
                             
                         if target_sweep_qty > 0:
+                            # 💡 락다운(Lock-down) 봉인
                             vwap_cache[f"REV_{t}_sweep_finished"] = True
                             
                             await asyncio.to_thread(broker.cancel_all_orders_safe, t, "SELL")
@@ -649,7 +665,6 @@ async def scheduled_after_market_lottery(context):
                         msg += f"▫️ 타겟 가격: <b>${target_price:.2f}</b> (총 평단가 +3%)\n"
                         msg += f"▫️ 정규장 마감 후 유휴 주식을 활용하여 시간 외 폭등을 포획합니다. 미체결 시 내일 아침 자동 소멸됩니다! 🎣"
                         await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML', disable_notification=True)
-                    # MODIFIED: [V25.25 핫픽스] 주문 거절(Reject) 시 침묵 맹점 수술. 사유 텔레그램 타전
                     else:
                         err_msg = res.get('msg1', '알 수 없는 KIS 시스템 에러')
                         fail_msg = f"❌ <b>[{t}] 애프터마켓 덫(Lottery Trap) 장전 실패</b>\n"
@@ -663,5 +678,4 @@ async def scheduled_after_market_lottery(context):
         await asyncio.wait_for(_do_lottery(), timeout=60.0)
     except Exception as e:
         logging.error(f"🚨 애프터마켓 로터리 덫 에러: {e}")
-        # MODIFIED: [V25.25 핫픽스] 타임아웃 예외 발생 시에도 침묵하지 않고 즉각 타전
         await context.bot.send_message(chat_id=chat_id, text=f"🚨 <b>애프터마켓 로터리 덫 치명적 에러 발생!</b>\n▫️ 상세 내역: {e}", parse_mode='HTML')
