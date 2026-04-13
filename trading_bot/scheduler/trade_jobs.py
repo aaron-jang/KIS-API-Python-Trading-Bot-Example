@@ -1,9 +1,12 @@
 # ==========================================================
-# [scheduler_trade.py] - Part 1/2 부 (상반부)
+# [scheduler_trade.py] - 🌟 100% 통합 완성본 🌟
 # ⚠️ 수술 내역: 
 # 🚨 [V25.03 긴급 수술] 타임존 Glitch 방어 및 상대적 시간 윈도우(Relative Time Window) 도입
 # 💡 하드코딩된 '15시' 비교를 폐기하고 '장 마감(market_close) 30분 전' 앵커 시스템으로 전면 교체
 # 🚨 [V25.04 패치] 듀얼 레퍼런싱 데이터(SOXX/SOXL) 이원화 호출 및 파이프라인 연동
+# 🚨 [V25.19 핫픽스] 서머타임(DST) 경계일 프리마켓 시간 연산 에러(NonExistentTimeError) 수학적 교정
+# 🚨 [V25.19 핫픽스] 듀얼 레퍼런싱 base_map 매핑 누락 시 파생상품 오호출 맹점 방어
+# 🚨 [V25.20 핫픽스] 잭팟 스윕 피니셔 MOC 락다운 충돌 방어 및 순수 매도 가능 잔량 디커플링 연산 이식
 # ==========================================================
 import os
 import logging
@@ -41,7 +44,8 @@ async def scheduled_sniper_monitor(context):
             market_close = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
         else: return
     
-    pre_start = market_open.replace(hour=4, minute=0)
+    # MODIFIED: [V25.19 핫픽스] DST 전환일(NonExistentTimeError) 방어를 위해 상대적 시간차 연산으로 교체 (High 6)
+    pre_start = market_open - datetime.timedelta(hours=5, minutes=30)
     start_monitor = pre_start + datetime.timedelta(minutes=1)
     end_monitor = market_close - datetime.timedelta(minutes=1)
     
@@ -52,7 +56,9 @@ async def scheduled_sniper_monitor(context):
     
     app_data = context.job.data
     cfg, broker, strategy, tx_lock = app_data['cfg'], app_data['broker'], app_data['strategy'], app_data['tx_lock']
-    base_map = app_data.get('base_map', {})  # NEW: 듀얼 레퍼런싱 매핑 로드
+    
+    # MODIFIED: [V25.19 핫픽스] base_map 누락 시 파생상품을 그대로 호출하는 맹점 방어 (Medium 10)
+    base_map = app_data.get('base_map', {'SOXL': 'SOXX', 'TQQQ': 'QQQ'})
     chat_id = context.job.chat_id
     
     tracking_cache = app_data.setdefault('sniper_tracking', {})
@@ -135,13 +141,6 @@ async def scheduled_sniper_monitor(context):
                     continue
 
                 # (이하 V14 상방 스나이퍼 로직 동일 유지...)
-# ==========================================================
-# [scheduler_trade.py] - Part 2/2 부 (하반부)
-# 🚨 [V25.03 핵심 수술] 하드코딩 시간(Hour) 폐기 및 상대적 타임 윈도우(Relative Time Window) 이식
-# 🚨 [V25.03 핵심 수술] 기존 LOC 덫 취소 실패 시 자가 치유(Self-Healing Nuke) 방어막 탑재
-# ==========================================================
-
-                # (상반부 V14 상방 스나이퍼 로직 종료 이후...)
 
 # ==========================================================
 # 2. 🛡️ Fail-Safe: 선제적 LOC 취소 (기본 스케줄러, 자가치유로 보완됨)
@@ -181,10 +180,10 @@ async def scheduled_vwap_init_and_cancel(context):
         await asyncio.wait_for(_do_init(), timeout=45.0)
     except Exception as e:
         logging.error(f"🚨 Fail-Safe 타임아웃 에러: {e}")
-
 # ==========================================================
 # 3. ⏱️ 1분봉 정밀 타격 (V-REV 전용 타임 슬라이싱)
 # 🚨 [V25.03 수술] 시간 앵커(market_close) 기반 동적 역산 알고리즘 도입
+# 🚨 [V25.20 핫픽스] 잭팟 스윕 피니셔 MOC 락다운 충돌 방어 및 순수 매도 가능 잔량 디커플링 연산 이식
 # ==========================================================
 async def scheduled_vwap_trade(context):
     if not is_market_open(): return
@@ -192,7 +191,6 @@ async def scheduled_vwap_trade(context):
     est = pytz.timezone('US/Eastern')
     now_est = datetime.datetime.now(est)
     
-    # 💡 [핵심 수술 1] 15시 30분 하드코딩 폐기 -> 장 마감 시간(market_close) 동적 획득
     try:
         nyse = mcal.get_calendar('NYSE')
         schedule = nyse.schedule(start_date=now_est.date(), end_date=now_est.date())
@@ -204,7 +202,6 @@ async def scheduled_vwap_trade(context):
     vwap_start_time = market_close - datetime.timedelta(minutes=30)
     vwap_end_time = market_close - datetime.timedelta(minutes=1)
     
-    # 장 마감 30분 전 ~ 1분 전 사이에만 완벽하게 동작
     if not (vwap_start_time <= now_est <= vwap_end_time):
         return
         
@@ -225,7 +222,6 @@ async def scheduled_vwap_trade(context):
         0.0259, 0.0284, 0.0331, 0.0385, 0.0400, 0.0461, 0.0553, 0.0620, 0.0750, 0.1180
     ]
     
-    # 💡 [핵심 수술 2] 장 마감까지 남은 분(minute)을 역산하여 U-Curve 인덱스 매핑
     minutes_to_close = int(max(1, (market_close - now_est).total_seconds()) / 60)
     min_idx = 30 - minutes_to_close
     if min_idx < 0: min_idx = 0
@@ -240,21 +236,19 @@ async def scheduled_vwap_trade(context):
             for t in cfg.get_active_tickers():
                 if cfg.get_version(t) == "V_REV":
                     
-                    # 💡 [핵심 수술 3] 자가 치유(Self-Healing Nuke) 방어막 가동
-                    # 취소 스케줄러가 불발되었더라도 여기서 즉시 팩트 스캔 후 기존 덫 강제 파괴!
                     if not vwap_cache.get(f"REV_{t}_nuked"):
                         try:
                             await asyncio.to_thread(broker.cancel_all_orders_safe, t, "BUY")
                             await asyncio.to_thread(broker.cancel_all_orders_safe, t, "SELL")
                             vwap_cache[f"REV_{t}_nuked"] = True
                             msg = f"🌅 <b>[{t}] 하이브리드 타임 슬라이싱 기상 (자가 치유 가동)</b>\n"
-                            msg += f"▫️ 장 마감 30분 전 진입을 확인하여 기존 LOC 덫을 강제 취소(Nuke)했습니다.\n"
+                            msg += f"▫️ 장 마감 30분 전 진입을 확인하여 기존 LOC 덫 강제 취소(Nuke)했습니다.\n"
                             msg += f"▫️ 스케줄러 누락을 완벽히 극복하고 1분 단위 정밀 타격을 즉각 개시합니다. ⚔️"
                             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML', disable_notification=True)
                             await asyncio.sleep(1.0)
                         except Exception as e:
                             logging.error(f"🚨 자가 치유 Nuke 실패: {e}")
-                            continue # 취소에 실패하면 핑퐁 방지를 위해 다음 1분에 재시도
+                            continue
                             
                     strategy_rev = app_data.get('strategy_rev')
                     queue_ledger = app_data.get('queue_ledger')
@@ -279,7 +273,6 @@ async def scheduled_vwap_trade(context):
                             layer_1_price = sum(item.get('qty', 0) * item.get('price', 0.0) for item in lots_for_date) / layer_1_qty
                             layer_1_trigger = round(layer_1_price * 1.006, 2)
                     
-                    # 💡 [핵심 수술 4] 스윕 피니셔 발동 시간을 "장 마감 2분 이하"로 동적 처리
                     if minutes_to_close <= 2 and not vwap_cache.get(f"REV_{t}_sweep_finished"):
                         target_sweep_qty = 0
                         sweep_type = ""
@@ -297,33 +290,48 @@ async def scheduled_vwap_trade(context):
                             await asyncio.to_thread(broker.cancel_all_orders_safe, t, "SELL")
                             await asyncio.sleep(0.5)
                             
-                            bid_price = float(await asyncio.to_thread(broker.get_bid_price, t) or 0.0)
-                            exec_price = bid_price if bid_price > 0 else curr_p
+                            # MODIFIED: [V25.20 핫픽스] 미국 거래소 MOC 취소 불가 락다운 방어를 위한 디커플링 연산
+                            # 증권사 계좌를 실시간으로 재스캔하여 취소되지 않고 잠긴(Locked) 물량을 수학적으로 차감
+                            _, live_holdings = await asyncio.to_thread(broker.get_account_balance)
+                            if live_holdings and t in live_holdings:
+                                # broker.py 확장을 통해 ord_psbl_qty(순수 매도 가능 잔량)를 반환받음
+                                sellable_qty = int(float(live_holdings[t].get('ord_psbl_qty', live_holdings[t].get('qty', 0))))
+                                if sellable_qty < target_sweep_qty:
+                                    target_sweep_qty = sellable_qty
+                                    sweep_type += " (MOC 잠금분 디커플링 차감)"
                             
-                            res = broker.send_order(t, "SELL", target_sweep_qty, exec_price, "LIMIT")
-                            odno = res.get('odno', '')
-                            
-                            if res.get('rt_cd') == '0' and odno:
-                                msg = f"🌪️ <b>[{t}] V-REV 본대 {sweep_type} 강제 청산 (Sweep Finisher) 발동!</b>\n"
-                                if sweep_type == "잭팟 전량":
-                                    msg += f"▫️ 장 마감을 2분 앞두고 잭팟 커트라인({jackpot_trigger:.2f}) 돌파를 확인했습니다.\n"
-                                else:
-                                    msg += f"▫️ 장 마감을 2분 앞두고 1층 앵커({layer_1_trigger:.2f}) 방어를 확인했습니다.\n"
-                                msg += f"▫️ 미체결 잔량 <b>{target_sweep_qty}주</b>를 시장 매수호가(${exec_price:.2f})로 전량 폭격하여 지층을 완벽하게 소각합니다! 🏆"
-                                await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                            # 락다운으로 인해 순수 매도 가능 잔량이 0이 된 경우 덤핑 스킵
+                            if target_sweep_qty > 0:
+                                bid_price = float(await asyncio.to_thread(broker.get_bid_price, t) or 0.0)
+                                exec_price = bid_price if bid_price > 0 else curr_p
                                 
-                                ccld_qty = 0
-                                for _ in range(4):
-                                    await asyncio.sleep(2.0)
-                                    execs = await asyncio.to_thread(broker.get_execution_history, t, today_str, today_str)
-                                    my_execs = [ex for ex in execs if ex.get('odno') == odno]
-                                    if my_execs:
-                                        ccld_qty = sum(int(float(ex.get('ft_ccld_qty') or 0)) for ex in my_execs)
-                                        if ccld_qty >= target_sweep_qty: break
-                                        
-                                if ccld_qty > 0:
-                                    strategy_rev.record_execution(t, "SELL", ccld_qty, exec_price)
-                                    queue_ledger.pop_lots(t, ccld_qty)
+                                res = broker.send_order(t, "SELL", target_sweep_qty, exec_price, "LIMIT")
+                                odno = res.get('odno', '')
+                                
+                                if res.get('rt_cd') == '0' and odno:
+                                    msg = f"🌪️ <b>[{t}] V-REV 본대 {sweep_type} 강제 청산 (Sweep Finisher) 발동!</b>\n"
+                                    if "잭팟" in sweep_type:
+                                        msg += f"▫️ 장 마감을 2분 앞두고 잭팟 커트라인({jackpot_trigger:.2f}) 돌파를 확인했습니다.\n"
+                                    else:
+                                        msg += f"▫️ 장 마감을 2분 앞두고 1층 앵커({layer_1_trigger:.2f}) 방어를 확인했습니다.\n"
+                                    msg += f"▫️ 매도 가능 잔량 <b>{target_sweep_qty}주</b>를 시장 매수호가(${exec_price:.2f})로 전량 폭격하여 지층을 소각합니다! 🏆"
+                                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                                    
+                                    ccld_qty = 0
+                                    for _ in range(4):
+                                        await asyncio.sleep(2.0)
+                                        execs = await asyncio.to_thread(broker.get_execution_history, t, today_str, today_str)
+                                        my_execs = [ex for ex in execs if ex.get('odno') == odno]
+                                        if my_execs:
+                                            ccld_qty = sum(int(float(ex.get('ft_ccld_qty') or 0)) for ex in my_execs)
+                                            if ccld_qty >= target_sweep_qty: break
+                                            
+                                    if ccld_qty > 0:
+                                        strategy_rev.record_execution(t, "SELL", ccld_qty, exec_price)
+                                        queue_ledger.pop_lots(t, ccld_qty)
+                            else:
+                                msg = f"⚠️ <b>[{t}] 스윕 피니셔 덤핑 생략 (MOC 락다운 감지)</b>\n▫️ 잭팟/1층 조건이 달성되었으나, 대상 물량이 수동 긴급 수혈(MOC) 등 취소 불가 상태로 미국 거래소에 묶여 있어 스윕 덤핑을 자동 스킵합니다."
+                                await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
                         
                         if target_sweep_qty > 0 or (total_q > 0 and curr_p >= jackpot_trigger):
                             continue 
@@ -366,7 +374,6 @@ async def scheduled_vwap_trade(context):
                         min_idx=min_idx, alloc_cash=rev_daily_budget, q_data=q_data
                     )
                     
-                    # 💡 [핵심 수술 5] LOC 전환 기준점을 장 마감 "15분 전 이상 남았을 때"로 동적 처리
                     if rev_plan.get('trigger_loc') and minutes_to_close >= 15:
                         vwap_cache[f"REV_{t}_loc_fired"] = True
                         msg = f"🛡️ <b>[{t}] 60% 거래량 지배력 감지 (추세장 전환)</b>\n"
@@ -497,21 +504,31 @@ async def scheduled_regular_trade(context):
                     rev_budget = float(cfg.get_seed(t) or 0.0) * 0.15
                     
                     half_portion_cash = rev_budget * 0.5
-                    one_portion_qty = math.floor(rev_budget / curr_p) if curr_p > 0 else 0
                     
                     loc_orders = []
                     
-                    if q_data:
-                        recent_lots = list(reversed(q_data))[:3]
-                        for idx, lot in enumerate(recent_lots):
-                            if idx == 0:
-                                target_sell_price = round(lot.get('price', prev_c) * 1.006, 2)
-                            else:
-                                target_sell_price = round(safe_avg * 1.005, 2)
-                                
-                            sell_qty = min(lot['qty'], one_portion_qty) if one_portion_qty > 0 else lot['qty']
-                            if sell_qty > 0:
-                                loc_orders.append({'side': 'SELL', 'qty': sell_qty, 'price': target_sell_price, 'type': 'LOC', 'desc': f'예방적 매도(Pop{idx+1})'})
+                    if q_data and safe_qty > 0:
+                        dates_in_queue = sorted(list(set(item.get('date') for item in q_data if item.get('date'))), reverse=True)
+                        l1_qty = 0
+                        l1_price = 0.0
+                        
+                        if dates_in_queue:
+                            lots_1 = [item for item in q_data if item.get('date') == dates_in_queue[0]]
+                            l1_qty = sum(item.get('qty', 0) for item in lots_1)
+                            if l1_qty > 0:
+                                l1_price = sum(item.get('qty', 0) * item.get('price', 0.0) for item in lots_1) / l1_qty
+                        
+                        target_l1 = round(l1_price * 1.006, 2)
+                        
+                        if l1_qty > 0:
+                            loc_orders.append({'side': 'SELL', 'qty': l1_qty, 'price': target_l1, 'type': 'LOC', 'desc': '[1층 단독]'})
+                            
+                        upper_qty = safe_qty - l1_qty
+                        if upper_qty > 0:
+                            upper_invested = (safe_qty * safe_avg) - (l1_qty * l1_price)
+                            upper_avg = upper_invested / upper_qty if upper_invested > 0 else safe_avg
+                            target_upper = round(upper_avg * 1.005, 2)
+                            loc_orders.append({'side': 'SELL', 'qty': upper_qty, 'price': target_upper, 'type': 'LOC', 'desc': '[상위 재고]'})
                     
                     if prev_c > 0:
                         b1_price = round(prev_c * 0.999 if v_rev_q_qty == 0 else prev_c * 0.995, 2)
@@ -541,7 +558,7 @@ async def scheduled_regular_trade(context):
 
             for t in v_rev_tickers:
                 msg = f"🎺 <b>[{t}] V-REV 예방적 방어망 장전 완료</b>\n"
-                msg += f"▫️ 프리장이 개장했습니다! 시스템 다운 등 최악의 블랙스완을 대비하여 <b>양방향 종가(LOC) 덫</b>을 KIS 서버에 선제 전송했습니다.\n"
+                msg += f"▫️ 프리장이 개장했습니다! 시스템 다운 등 최악의 블랙스완을 대비하여 <b>지층별 분리 종가(LOC) 덫</b>을 KIS 서버에 선제 전송했습니다.\n"
                 msg += f"▫️ 서버가 무사하다면 장 후반(04:30 KST)에 스스로 깨어나 이 덫을 거두고 추세(60% 허들)를 스캔하여 새로운 최적 전술로 교체합니다! 편안한 밤 보내십시오! 🌙💤\n"
                 await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
 
@@ -648,4 +665,3 @@ async def scheduled_after_market_lottery(context):
         await asyncio.wait_for(_do_lottery(), timeout=60.0)
     except Exception as e:
         logging.error(f"🚨 애프터마켓 로터리 덫 에러: {e}")
-

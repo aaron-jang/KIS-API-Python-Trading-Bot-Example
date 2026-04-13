@@ -1,7 +1,10 @@
 # ==========================================================
-# [broker.py] (1부 / 2부) - 🌟 100% 통합 완성본 🌟
+# [broker.py] - 🌟 100% 통합 완성본 🌟
 # ⚠️ 수술 내역: 야후 파이낸스(yfinance) 좀비 스레드 누적 방지
 # 모든 history() 호출에 timeout=5 파라미터 강제 주입 완료
+# 🚨 [V25.19 핫픽스] 토큰 만료 시간 타임존(Timezone) Naive/Aware 충돌 교정
+# 🚨 [V25.19 핫픽스] Windows 환경 임시 파일 권한(Permission) 락 충돌 방어 (shutil.move 도입)
+# 🚨 [V25.20 핫픽스] 잭팟 스윕 피니셔 디커플링 연산을 위한 ord_psbl_qty(순수 매도 가능 수량) 확장 이식
 # ==========================================================
 
 import requests
@@ -13,6 +16,7 @@ import math
 import yfinance as yf
 import pytz
 import tempfile
+import shutil  # NEW: [V25.19 핫픽스] 파일 권한 충돌 방어용 라이브러리 추가
 import pandas as pd   
 import numpy as np
 import trading_bot.strategy.volatility as ve
@@ -36,7 +40,12 @@ class KoreaInvestmentBroker:
                 with open(self.token_file, 'r') as f:
                     saved = json.load(f)
                 expire_time = datetime.datetime.strptime(saved['expire'], '%Y-%m-%d %H:%M:%S')
-                if expire_time > datetime.datetime.now() + datetime.timedelta(hours=1):
+                
+                # MODIFIED: [V25.19 핫픽스] 타임존 충돌을 막기 위해 현재 시간을 Naive Datetime으로 교정
+                kst = pytz.timezone('Asia/Seoul')
+                now_kst_naive = datetime.datetime.now(kst).replace(tzinfo=None)
+                
+                if expire_time > now_kst_naive + datetime.timedelta(hours=1):
                     self.token = saved['token']
                     return
             except Exception: pass
@@ -63,7 +72,9 @@ class KoreaInvestmentBroker:
                     json.dump({'token': self.token, 'expire': expire_str}, f)
                     f.flush()
                     os.fsync(fd)
-                os.replace(temp_path, self.token_file)
+                
+                # MODIFIED: [V25.19 핫픽스] Windows 환경에서 파일 핸들(fd) 권한 에러를 우회하는 shutil.move 이식
+                shutil.move(temp_path, self.token_file)
             else:
                 print(f"❌ [Broker] 토큰 발급 실패: {data.get('error_description', '알 수 없는 오류')}")
         except Exception as e:
@@ -198,9 +209,11 @@ class KoreaInvestmentBroker:
                 for item in res_hold.get('output1', []):
                     ticker = item.get('ovrs_pdno')
                     qty = int(self._safe_float(item.get('ovrs_cblc_qty', 0)))
+                    # MODIFIED: [V25.20 핫픽스] 스윕 피니셔 디커플링 연산을 위해 '순수 매도 가능 잔량(ord_psbl_qty)' 추가 추출
+                    ord_psbl_qty = int(self._safe_float(item.get('ord_psbl_qty', qty)))
                     avg = self._safe_float(item.get('pchs_avg_pric', 0))
                     if qty > 0 and ticker not in holdings: 
-                        holdings[ticker] = {'qty': qty, 'avg': avg}
+                        holdings[ticker] = {'qty': qty, 'ord_psbl_qty': ord_psbl_qty, 'avg': avg}
         
         if api_success:
             return cash, holdings
@@ -290,7 +303,6 @@ class KoreaInvestmentBroker:
         except Exception as e:
             print(f"❌ [한투 API] 현재가 우회 조회 실패: {e}")
         return 0.0
-        
     def get_ask_price(self, ticker):
         try:
             excg_cd = self._get_exchange_code(ticker, target_api="PRICE")
@@ -354,6 +366,7 @@ class KoreaInvestmentBroker:
         except Exception as e:
             print(f"❌ [한투 API] 전일종가 우회 조회 실패: {e}")
         return 0.0
+
     def get_5day_ma(self, ticker):
         try:
             stock = yf.Ticker(ticker)

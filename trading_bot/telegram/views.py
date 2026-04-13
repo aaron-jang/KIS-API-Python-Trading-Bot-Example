@@ -9,21 +9,42 @@
 # 🚨 [V25.05 UI 패치] 시작화면(/start) 브리핑 텍스트 서머타임 ON/OFF 동적 렌더링 팩트 교정
 # 🚨 [V25.06 버전 패치] /version 명령어 Type Mismatch 버그 해결 (문자열 동적 파싱 로직 이식)
 # 🚨 [V25.06 버전 UX 패치] 최신 버전이 가장 마지막 줄에 출력되도록 정배열 유지 및 초기 진입 시 마지막 페이지 렌더링 강제
+# 🚨 [V25.07 런타임 붕괴 방어] PIL 이미지 라이브러리 임포트 및 폰트 로더(_load_best_font) 100% 무손실 복구
 # ==========================================================
 import os
 import math
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from PIL import Image, ImageDraw, ImageFont  # NEW: [V25.07] 런타임 붕괴 방어용 임포트 복구
 
 class TelegramView:
     def __init__(self):
-        pass
+        # NEW: [V25.07] OS별 호환 폰트 경로 및 이미지 렌더링 초기화 복구
+        self.bold_font_paths = [
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", 
+            "C:/Windows/Fonts/malgunbd.ttf", 
+            "AppleGothic.ttf"
+        ]
+        self.reg_font_paths = [
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", 
+            "C:/Windows/Fonts/malgun.ttf", 
+            "AppleGothic.ttf"
+        ]
+
+    # NEW: [V25.07] 폰트 로드 실패 시 봇 다운을 막아주는 안전망 폴백(Fallback) 메서드
+    def _load_best_font(self, font_paths, size):
+        for path in font_paths:
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
 
     # MODIFIED: [V25.05 UI 패치] target_hour 기반 서머타임 ON/OFF 동적 판별 및 줄바꿈/텍스트 100% 일치화
     def get_start_message(self, target_hour, season_icon, latest_version):
         dst_state = "🌞서머타임 ON" if target_hour == 17 else "❄️서머타임 OFF"
         
         msg = f"🌌 [ 인피니트 스노우볼 {latest_version} ]\n"
-        msg += "💠 2대 퀀트 코어 + AVWAP 하이브리드 엔진\n\n"
+        msg += "💠 2대 퀀트 코어 + AVWAP 하이브리드\n\n"
         
         msg += f"🕒 [ 운영 스케줄 ({dst_state}) ]\n"
         msg += "🔹 6시간 간격 : 🔑 API 토큰 자동 갱신\n"
@@ -35,7 +56,7 @@ class TelegramView:
         msg += "▶️ /sync : 📜 통합 지시서 조회\n"
         msg += "▶️ /record : 📊 장부 동기화 및 조회\n"
         msg += "▶️ /history : 🏆 졸업 명예의 전당\n"
-        msg += "▶️ /settlement : ⚙️ 코어 스위칭 / 전술 설정\n"
+        msg += "▶️ /settlement : ⚙️ 코어스위칭/전술설정\n"
         msg += "▶️ /seed : 💵 개별 시드머니 관리\n"
         msg += "▶️ /ticker : 🔄 운용 종목 선택\n"
         msg += "▶️ /mode : 🎯 상방 스나이퍼 ON/OFF\n"
@@ -229,6 +250,7 @@ class TelegramView:
 # 1. 1부(상반부)와 100% 결합되도록 들여쓰기 뎁스(4칸) 팩트 정렬
 # 2. 사용자의 원본 2부 코드(동기화 지시서, 결산, 스냅샷, 종목메뉴) 100% 무손실 복원
 # 3. 1부에서 누락되었던 get_ticker_menu 라우터 하단부 통합 완료
+# 🚨 [V25.18 UI 팩트 패치] /settlement V-REV 렌더링 시 무매4 찌꺼기(분할/목표) 소각 및 15% 예산/디커플링 팩트 주입 완료
 # ==========================================================
 
     def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active, p_trade_data=None):
@@ -443,15 +465,19 @@ class TelegramView:
             comp_rate = config.get_compound_rate(t)
             
             msg += f"{icon} <b>{t} ({ver_display} 모드)</b>\n"
-            msg += f"▫️ 분할: {split_cnt}회\n▫️ 목표: {target_pct}%\n▫️ 자동복리: {comp_rate}%\n"
             
+            # MODIFIED: [V25.18 UI 패치] V-REV 렌더링 시 낡은 V14 찌꺼기 철거 및 팩트 기반 디커플링 수치 주입
             if ver == "V_REV":
+                msg += "▫️ 1회 예산: 총 시드의 15% (고정 할당)\n"
+                msg += "▫️ 목표: [1층] 매수단가+0.6%\n"
+                msg += "              [상위층] 평단가+0.5% (디커플링)\n"
+                msg += f"▫️ 자동복리: {comp_rate}%\n"
                 msg += "⚖️ <b>역추세(Reversion) 하이브리드 엔진 스탠바이:</b>\n"
                 msg += "▫️ 전일 종가 앵커 기준 LIFO 큐 교차 매매 대기 중\n\n"
                 row_init = [InlineKeyboardButton(f"🔌 {t} V-REV 큐 장부 초기화 (물량이관)", callback_data=f"SET_INIT:V_REV:{t}")]
                 keyboard.append(row_init)
             else:
-                msg += "\n"
+                msg += f"▫️ 분할: {split_cnt}회\n▫️ 목표: {target_pct}%\n▫️ 자동복리: {comp_rate}%\n\n"
                 
             row1 = [
                 InlineKeyboardButton("💎 V14 (무매4)", callback_data=f"SET_VER:V14:{t}"),
