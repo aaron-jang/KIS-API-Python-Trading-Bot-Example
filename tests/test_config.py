@@ -184,9 +184,11 @@ class TestLocksAndEscrow:
         assert cfg.get_escrow_cash("TQQQ") == 0.0
 
     def test_escrow_is_dynamic_from_ledger(self, cfg):
-        """V24.10: 에스크로는 장부 기반 동적 산출 (set은 no-op)"""
-        cfg.set_escrow_cash("TQQQ", 500.0)  # no-op
-        assert cfg.get_escrow_cash("TQQQ") == 0.0  # 장부 비어있으면 0
+        """V25.19: set_escrow_cash는 인메모리 캐시에 저장, clear 시 0으로 복귀"""
+        cfg.set_escrow_cash("TQQQ", 500.0)
+        assert cfg.get_escrow_cash("TQQQ") == 500.0
+        cfg.clear_escrow_cash("TQQQ")
+        assert cfg.get_escrow_cash("TQQQ") == 0.0
 
     def test_total_locked_cash_empty(self, cfg):
         assert cfg.get_total_locked_cash() == 0.0
