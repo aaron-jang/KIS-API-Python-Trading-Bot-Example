@@ -5,6 +5,7 @@
 # 💡 [V25.00 수술] AVWAP 하이브리드 전술 상태 저장(캐싱) 파일 경로 및 함수 이식
 # 🚨 [V25.19 핫픽스] 빈 장부 스캔 시 IndexError 런타임 붕괴 완벽 방어
 # 🚨 [V25.19 핫픽스] 에스크로(Escrow) 3대 관리 함수(set/add/clear) 팩트 기반 완전 구현
+# 🚀 [V26.00 승격] 수동 VWAP 시그널 모드(Manual Mode) 독립 플래그 및 캐싱 엔진 신설 탑재
 # ==========================================================
 import json
 import os
@@ -40,8 +41,8 @@ class ConfigManager:
             "REVERSE_CFG": "data/reverse_config.json",
             "SNIPER_MULTIPLIER_CFG": "data/sniper_multiplier.json",
             "SPLIT_HISTORY": "data/split_history.json",
-            # 💡 [V25.00 핵심 수술] AVWAP 하이브리드 전용 로컬 상태 파일 신설
-            "AVWAP_HYBRID_CFG": "data/avwap_hybrid.json"
+            "AVWAP_HYBRID_CFG": "data/avwap_hybrid.json",
+            "MANUAL_VWAP_CFG": "data/manual_vwap_config.json"
         }
         
         self.DEFAULT_SEED = {"SOXL": 6720.0, "TQQQ": 6720.0}
@@ -650,6 +651,15 @@ class ConfigManager:
         d = self._load_json(self.FILES["AVWAP_HYBRID_CFG"], {})
         d[ticker] = bool(v)
         self._save_json(self.FILES["AVWAP_HYBRID_CFG"], d)
+
+    def get_manual_vwap_mode(self, ticker):
+        d = self._load_json(self.FILES["MANUAL_VWAP_CFG"], {})
+        return d.get(ticker, False)
+
+    def set_manual_vwap_mode(self, ticker, v):
+        d = self._load_json(self.FILES["MANUAL_VWAP_CFG"], {})
+        d[ticker] = bool(v)
+        self._save_json(self.FILES["MANUAL_VWAP_CFG"], d)
 
     def get_secret_mode(self):
         return self._load_file(self.FILES["SECRET_MODE"]) == 'True'

@@ -1,6 +1,6 @@
 # ==========================================================
 # [telegram_view.py] - Part 1/2 부 (상반부)
-# 💡 V25.05 💠 V-REV 하이브리드 & V14 무매 UI 렌더링 엔진 (1부 완전 복구본)
+# 💡 V25.05 💠 V-REV 하이브리드 & V14 무매 UI 렌더링 엔진
 # ⚠️ 수술 내역: 
 # 1. 덮어쓰기 사고로 소실된 TelegramView 클래스 헤더 및 필수 UI 모듈 100% 복원
 # 2. V-REV 큐(Queue) 관리 및 긴급 수혈(Emergency MOC) 메뉴 렌더링 엔진 복구
@@ -10,15 +10,18 @@
 # 🚨 [V25.06 버전 패치] /version 명령어 Type Mismatch 버그 해결 (문자열 동적 파싱 로직 이식)
 # 🚨 [V25.06 버전 UX 패치] 최신 버전이 가장 마지막 줄에 출력되도록 정배열 유지 및 초기 진입 시 마지막 페이지 렌더링 강제
 # 🚨 [V25.07 런타임 붕괴 방어] PIL 이미지 라이브러리 임포트 및 폰트 로더(_load_best_font) 100% 무손실 복구
+# 🚨 [V25.18 UI 팩트 패치] /settlement V-REV 렌더링 시 무매4 찌꺼기(분할/목표) 소각 및 15% 예산/디커플링 팩트 주입 완료
+# 🚀 [V26.01 뷰포트 수술] V_REV 2단계 모드 선택(자동 vs 수동 VWAP) 전용 렌더러 신설 완료
+# 🚀 [V26.02 UI 최적화] 수동 모드 타이틀 '(수동)' 치환 및 VWAP 타임 스케줄 렌더링 은폐 완벽 이식
+# 🚀 [V26.02 핵심 수술] V14 오리지널 집행 방식(LOC/VWAP) 선택용 2단계 렌더러 신설 및 지시서 동기화
 # ==========================================================
 import os
 import math
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from PIL import Image, ImageDraw, ImageFont  # NEW: [V25.07] 런타임 붕괴 방어용 임포트 복구
+from PIL import Image, ImageDraw, ImageFont
 
 class TelegramView:
     def __init__(self):
-        # NEW: [V25.07] OS별 호환 폰트 경로 및 이미지 렌더링 초기화 복구
         self.bold_font_paths = [
             "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", 
             "C:/Windows/Fonts/malgunbd.ttf", 
@@ -30,7 +33,6 @@ class TelegramView:
             "AppleGothic.ttf"
         ]
 
-    # NEW: [V25.07] 폰트 로드 실패 시 봇 다운을 막아주는 안전망 폴백(Fallback) 메서드
     def _load_best_font(self, font_paths, size):
         for path in font_paths:
             try:
@@ -39,7 +41,6 @@ class TelegramView:
                 continue
         return ImageFont.load_default()
 
-    # MODIFIED: [V25.05 UI 패치] target_hour 기반 서머타임 ON/OFF 동적 판별 및 줄바꿈/텍스트 100% 일치화
     def get_start_message(self, target_hour, season_icon, latest_version):
         dst_state = "🌞서머타임 ON" if target_hour == 17 else "❄️서머타임 OFF"
         
@@ -157,6 +158,9 @@ class TelegramView:
             [InlineKeyboardButton("❌ 취소 (돌아가기)", callback_data=f"QUEUE:VIEW:{ticker}")]
         ]
         return msg, InlineKeyboardMarkup(keyboard)
+# ==========================================================
+# [telegram_view.py] - Part 2/2 부 (하반부)
+# ==========================================================
 
     def get_emergency_moc_confirm_menu(self, ticker, emergency_qty, emergency_price):
         msg = f"🚨 <b>[{ticker} 비상 수혈 최종 승인 대기]</b> 🚨\n\n"
@@ -192,7 +196,6 @@ class TelegramView:
         ITEMS_PER_PAGE = 5
         total_pages = max(1, (len(history_data) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
         
-        # MODIFIED: [V25.06 UX 패치] /version 최초 진입 시(page_index=None) 가장 최신 데이터가 있는 마지막 페이지 강제 렌더링
         current_page = (total_pages - 1) if page_index is None else page_index
         
         if current_page < 0:
@@ -203,11 +206,10 @@ class TelegramView:
         start_idx = current_page * ITEMS_PER_PAGE
         end_idx = start_idx + ITEMS_PER_PAGE
         
-        # 원본 데이터의 오름차순(과거->최신) 배열 순서를 100% 유지
         page_items = history_data[start_idx:end_idx]
 
         msg = "🚀 <b>[ PIPIOS 퀀트 엔진 패치노트 ]</b>\n"
-        msg += "▫️ 현재 시스템: <code>V25.06 하이브리드 코어</code>\n\n"
+        msg += "▫️ 현재 시스템: <code>V26.02 하이브리드 코어</code>\n\n"
         
         for item in page_items:
             if isinstance(item, str):
@@ -244,26 +246,15 @@ class TelegramView:
         keyboard.append([InlineKeyboardButton("❌ 닫기", callback_data="RESET:CANCEL")])
         
         return msg, InlineKeyboardMarkup(keyboard)
-# ==========================================================
-# [telegram_view.py] - Part 2/2 부 (하반부)
-# ⚠️ 수술 내역: 
-# 1. 1부(상반부)와 100% 결합되도록 들여쓰기 뎁스(4칸) 팩트 정렬
-# 2. 사용자의 원본 2부 코드(동기화 지시서, 결산, 스냅샷, 종목메뉴) 100% 무손실 복원
-# 3. 1부에서 누락되었던 get_ticker_menu 라우터 하단부 통합 완료
-# 🚨 [V25.18 UI 팩트 패치] /settlement V-REV 렌더링 시 무매4 찌꺼기(분할/목표) 소각 및 15% 예산/디커플링 팩트 주입 완료
-# ==========================================================
 
     def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active, p_trade_data=None):
-        # 💡 LOC 주문이 아직 들어가지 않은(is_locked가 False인) 종목의 필수 예산만 합산
         total_required_budget = sum(
             t_info.get('one_portion', 0.0) 
             for t_info in ticker_data 
             if not t_info.get('is_locked', False)
         )
         
-        # 💡 KIS 주문가능금액(cash)에서 미주문 필수 예산만 선제적 차감 (이중 차감 방어)
         dynamic_rp_amount = max(0.0, cash - total_required_budget)
-        
         total_locked = sum(t_info.get('escrow', 0.0) for t_info in ticker_data)
         
         header_msg = f"📜 <b>[ 통합 지시서 ({status_text}) ]</b>\n📅 <b>{dst_text}</b>\n"
@@ -286,6 +277,8 @@ class TelegramView:
             t = t_info['ticker']
             v_mode = t_info['version']
             
+            is_manual_vwap = t_info.get('is_manual_vwap', False)
+            
             if t_info.get('t_val', 0.0) > (t_info.get('split', 40.0) * 1.1):
                 body_msg += "⚠️ <b>[🚨 시스템 긴급 경고: 비정상 T값 폭주 감지!]</b>\n"
                 body_msg += f"🔎 현재 T값(<b>{t_info['t_val']:.4f}T</b>)이 설정된 분할수(<b>{int(t_info['split'])}분할</b>) 초과했습니다!\n"
@@ -293,10 +286,11 @@ class TelegramView:
                 body_msg += "🛡️ <b>가동 조치:</b> 마이너스 호가 차단용 절대 하한선($0.01) 방어막 가동 중!\n\n"
 
             if v_mode == "V_REV":
-                v_mode_display = "V_REV 역추세"
+                v_mode_display = "V_REV 역추세(수동)" if is_manual_vwap else "V_REV 역추세"
                 main_icon = "⚖️"
             else:
-                v_mode_display = "무매4"
+                # MODIFIED: [V26.02] V14 VWAP 모드 텍스트 렌더링 동기화
+                v_mode_display = "무매4 (VWAP)" if is_manual_vwap else "무매4 (LOC)"
                 main_icon = "💎"
                 
             is_rev = t_info.get('is_reverse', False)
@@ -346,7 +340,7 @@ class TelegramView:
 
             sign = "+" if t_info['profit_amt'] >= 0 else "-"
             icon = "🔺" if t_info['profit_amt'] >= 0 else "🔻"
-            body_msg += f"{icon} 수익: {sign}{abs(t_info['profit_pct']):.2f}% ({sign}${abs(t_info['profit_amt']):,.2f})\n"
+            body_msg += f"{icon} 수익: {sign}{abs(t_info['profit_pct']):.2f}% ({sign}${abs(t_info['profit_amt']):,.2f})\n\n"
             
             sniper_status_txt = t_info.get('upward_sniper', 'OFF')
             
@@ -374,7 +368,8 @@ class TelegramView:
                             body_msg += f"🎯 상방 스나이퍼: ${sn_target:.2f} 이상 대기\n"
             elif v_mode == "V_REV":
                 body_msg += "⚖️ <b>역추세 LIFO 큐(Queue) 엔진 스탠바이</b>\n"
-                body_msg += "⏱️ <b>VWAP 스케줄:</b> 15:30 EST 앵커 세팅 ➔ 1분 단위 교차 타격\n"
+                if not is_manual_vwap:
+                    body_msg += "⏱️ <b>VWAP 스케줄:</b> 15:30 EST 앵커 세팅 ➔ 1분 단위 교차 타격\n"
             
             if v_mode == "V_REV":
                 body_msg += "📋 <b>[주문 가이던스 - ⚖️다중 LIFO 제어]</b>\n"
@@ -398,6 +393,10 @@ class TelegramView:
                     keyboard.append([InlineKeyboardButton(f"🚀 {t} V-REV 방어선 수동 장전", callback_data=f"EXEC:{t}")])
                 
             else:
+                # MODIFIED: [V26.02] V14 VWAP 모드일 경우 가이던스 추가 렌더링
+                if is_manual_vwap and not is_rev:
+                    body_msg += "⏱️ <b>VWAP 스케줄:</b> 장 마감 30분 전 ➔ 1분 단위 유동성 분할 타격\n"
+                    
                 body_msg += f"📋 <b>[주문 계획 - {proc_status}]</b>\n"
                 plan_orders = t_info.get('plan', {}).get('orders', [])
                 if plan_orders:
@@ -452,13 +451,15 @@ class TelegramView:
         
         for t in active_tickers:
             ver = config.get_version(t)
+            is_manual_vwap = getattr(config, 'get_manual_vwap_mode', lambda x: False)(t)
             
             if ver == "V_REV":
                 icon = "⚖️"
                 ver_display = "V_REV 역추세"
             else:
                 icon = "💎"
-                ver_display = "무매4"
+                # MODIFIED: [V26.02] V14 타이틀 동적 변환
+                ver_display = "무매4 (VWAP)" if is_manual_vwap else "무매4 (LOC)"
                 
             split_cnt = int(config.get_split_count(t))
             target_pct = config.get_target_profit(t)
@@ -466,7 +467,6 @@ class TelegramView:
             
             msg += f"{icon} <b>{t} ({ver_display} 모드)</b>\n"
             
-            # MODIFIED: [V25.18 UI 패치] V-REV 렌더링 시 낡은 V14 찌꺼기 철거 및 팩트 기반 디커플링 수치 주입
             if ver == "V_REV":
                 msg += "▫️ 1회 예산: 총 시드의 15% (고정 할당)\n"
                 msg += "▫️ 목표: [1층] 매수단가+0.6%\n"
@@ -477,7 +477,10 @@ class TelegramView:
                 row_init = [InlineKeyboardButton(f"🔌 {t} V-REV 큐 장부 초기화 (물량이관)", callback_data=f"SET_INIT:V_REV:{t}")]
                 keyboard.append(row_init)
             else:
-                msg += f"▫️ 분할: {split_cnt}회\n▫️ 목표: {target_pct}%\n▫️ 자동복리: {comp_rate}%\n\n"
+                msg += f"▫️ 분할: {split_cnt}회\n▫️ 목표: {target_pct}%\n▫️ 자동복리: {comp_rate}%\n"
+                # NEW: [V26.02] V14 집행 방식 팩트 노출
+                v14_mode_txt = "VWAP 타임 슬라이싱 (유동성 추적)" if is_manual_vwap else "LOC 단일 타격 (초안정성)"
+                msg += f"▫️ 집행: <b>{v14_mode_txt}</b>\n\n"
                 
             row1 = [
                 InlineKeyboardButton("💎 V14 (무매4)", callback_data=f"SET_VER:V14:{t}"),
@@ -509,6 +512,45 @@ class TelegramView:
             ]
             keyboard.append(row3)
             
+        return msg, InlineKeyboardMarkup(keyboard)
+
+    def get_vrev_mode_selection_menu(self, ticker):
+        msg = f"⚠️ <b>[{ticker} 운용 방식 (수수료) 선택]</b>\n\n"
+        msg += "V-REV 전략은 1분 단위 교차 타격이 핵심이므로 <b>OpenAPI 수수료</b>가 일반 앱 매매보다 비싸게 청구될 수 있습니다.\n\n"
+        msg += "<b>1. 🤖 API 자동매매 모드</b>\n"
+        msg += "▫️ 장 마감 30분 전 1분 단위 VWAP 타임 슬라이싱 자동 격발\n"
+        msg += "▫️ 편리함 극대화 (수수료 감수)\n\n"
+        msg += "<b>2. 🖐️ 수동 VWAP 모드 (수수료 회피)</b>\n"
+        msg += "▫️ 봇은 타점 시그널 알림만 제공 (API 자동주문 영구 셧다운)\n"
+        msg += "▫️ <b>[필수]</b> 지시서를 보고 한투 앱(MTS)에서 직접 <b>'장 마감 30분 전'</b> VWAP 조건으로 수동 장전해야 함\n"
+        msg += "▫️ 수익률 보존 극대화\n\n"
+        msg += "원하시는 운용 방식을 선택해 주십시오."
+        
+        keyboard = [
+            [InlineKeyboardButton("🤖 자동매매 (1분 정밀타격)", callback_data=f"SET_VER_CONFIRM:AUTO:{ticker}")],
+            [InlineKeyboardButton("🖐️ 수동매매 (수수료 100% 절약)", callback_data=f"SET_VER_CONFIRM:MANUAL:{ticker}")],
+            [InlineKeyboardButton("❌ 작전 취소 (이전 버전 유지)", callback_data="RESET:CANCEL")]
+        ]
+        return msg, InlineKeyboardMarkup(keyboard)
+
+    # NEW: [V26.02 핵심 수술] V14 오리지널 집행 방식(LOC/VWAP) 선택용 렌더러
+    def get_v14_mode_selection_menu(self, ticker):
+        msg = f"💎 <b>[{ticker} 무매4 오리지널 집행 방식 선택]</b>\n\n"
+        msg += "오리지널 무한매수법(V14)의 당일 예산 집행 방식을 선택해 주십시오.\n\n"
+        msg += "<b>1. 📉 LOC 방식 (기본)</b>\n"
+        msg += "▫️ 17:05 KST 정규장 주문 시 전량 장마감시지정가(LOC)로 일괄 전송\n"
+        msg += "▫️ 호가창 슬리피지 최소화 및 초안정성 지향\n\n"
+        msg += "<b>2. 🕒 VWAP 방식 (유동성 추적)</b>\n"
+        msg += "▫️ 17:05 KST에는 예방적 LOC 덫만 장전\n"
+        msg += "▫️ 장 마감 30분 전부터 1분 단위로 예산을 분할하여 U-Curve 궤적으로 타격\n"
+        msg += "▫️ 물리적 미체결 엣지 케이스 방어 및 시장 합의 가격 수렴\n\n"
+        msg += "원하시는 집행 방식을 선택해 주십시오."
+        
+        keyboard = [
+            [InlineKeyboardButton("📉 LOC (종가 일괄 타격)", callback_data=f"SET_VER_CONFIRM:V14_LOC:{ticker}")],
+            [InlineKeyboardButton("🕒 VWAP (유동성 분할 타격)", callback_data=f"SET_VER_CONFIRM:V14_VWAP:{ticker}")],
+            [InlineKeyboardButton("❌ 작전 취소 (이전 버전 유지)", callback_data="RESET:CANCEL")]
+        ]
         return msg, InlineKeyboardMarkup(keyboard)
 
     def create_ledger_dashboard(self, ticker, qty, avg, invested, sold, records, t_val, split, is_history=False, is_reverse=False):
@@ -640,3 +682,4 @@ class TelegramView:
             [InlineKeyboardButton("💎 SOXL + TQQQ 통합", callback_data="TICKER:ALL")]
         ]
         return f"🔄 <b>[ 운용 종목 선택 ]</b>\n현재: <b>{', '.join(current_tickers)}</b>", InlineKeyboardMarkup(keyboard)
+

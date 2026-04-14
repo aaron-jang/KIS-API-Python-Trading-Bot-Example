@@ -5,6 +5,8 @@
 # 🚨 [V25.19 핫픽스] 토큰 만료 시간 타임존(Timezone) Naive/Aware 충돌 교정
 # 🚨 [V25.19 핫픽스] Windows 환경 임시 파일 권한(Permission) 락 충돌 방어 (shutil.move 도입)
 # 🚨 [V25.20 핫픽스] 잭팟 스윕 피니셔 디커플링 연산을 위한 ord_psbl_qty(순수 매도 가능 수량) 확장 이식
+# 🚨 [V25.23 디커플링] 범용 1분봉 스캔 엔진(get_1min_candles_df) 신설 탑재 (API 의존성 적출)
+# 🚨 [V25.25 핫픽스] 애프터마켓(AFTER_LIMIT) KIS 주문 코드 규격(00) 교정 (장마감 코드 34 충돌 방어)
 # ==========================================================
 
 import requests
@@ -393,6 +395,38 @@ class KoreaInvestmentBroker:
             
         return 0.0
 
+    def get_1min_candles_df(self, ticker):
+        try:
+            stock = yf.Ticker(ticker)
+            df = stock.history(period="1d", interval="1m", prepost=True, timeout=5)
+
+            if df.empty:
+                return None
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(1)
+
+            est = pytz.timezone('US/Eastern')
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC').tz_convert(est)
+            else:
+                df.index = df.index.tz_convert(est)
+
+            df = df.rename(columns={
+                'High': 'high',
+                'Low': 'low',
+                'Close': 'close',
+                'Volume': 'volume'
+            })
+
+            df['time_est'] = df.index.strftime('%H%M00')
+
+            return df[['high', 'low', 'close', 'volume', 'time_est']]
+
+        except Exception as e:
+            print(f"⚠️ [Broker] 야후 파이낸스 범용 1분봉 파싱 에러 ({ticker}): {e}")
+            return None
+
     def get_unfilled_orders(self, ticker):
         excg_cd = self._get_exchange_code(ticker, target_api="ORDER")
         params = {"CANO": self.cano, "ACNT_PRDT_CD": self.acnt_prdt_cd, "OVRS_EXCG_CD": excg_cd, "SORT_SQN": "DS", "CTX_AREA_FK200": "", "CTX_AREA_NK200": ""}
@@ -505,7 +539,7 @@ class KoreaInvestmentBroker:
         elif order_type == "MOC": ord_dvsn = "33"
         elif order_type == "LOO": ord_dvsn = "02"
         elif order_type == "MOO": ord_dvsn = "31"
-        elif order_type == "AFTER_LIMIT": ord_dvsn = "34"  # 💡 [안전장치] 애프터마켓 지정가 지원
+        elif order_type == "AFTER_LIMIT": ord_dvsn = "00"  # [V25.25 핫픽스] 애프터마켓 지정가 코드("00") 정규화
         else: ord_dvsn = "00"
 
         final_price = self._ceil_2(price)
