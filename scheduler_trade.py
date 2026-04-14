@@ -12,6 +12,7 @@
 # 🚨 [V25.25 에러 팩트 보고] 애프터마켓 로터리 덫 거절 사유 텔레그램 타전 방어막 신설
 # 🚨 [V25.26 락다운 확장] 당일 0주 졸업 후 유령 매수(Phantom Buy) 방지를 위한 Daily Buy-Lock 완벽 이식
 # 🚀 [V26.02 핵심 수술] V14 무매 오리지널의 VWAP 슬라이싱 스케줄러 통합 확장
+# 🚨 [V26.03 핫픽스] V-REV 자동매매 시 줍줍(Grid) 누락 복원 및 수동 모드 스케줄러 100% 락다운 이식
 # ==========================================================
 import os
 import logging
@@ -157,10 +158,14 @@ async def scheduled_vwap_init_and_cancel(context):
         async with tx_lock:
             for t in cfg.get_active_tickers():
                 version = cfg.get_version(t)
-                is_vwap_enabled = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
+                is_manual_vwap = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
                 
-                # MODIFIED: [V26.02] V-REV 뿐만 아니라, V14 VWAP 모드인 경우에도 예방적 LOC 덫 Nuke 가동
-                if version == "V_REV" or (version == "V14" and is_vwap_enabled):
+                # MODIFIED: [V26.03 핫픽스] V-REV의 수동(Manual) 모드일 경우 API 자동 셧다운 방어
+                if version == "V_REV" and is_manual_vwap:
+                    continue
+                
+                # V-REV(Auto) 또는 V14(VWAP) 모드인 경우 예방적 LOC 덫 Nuke 가동
+                if version == "V_REV" or (version == "V14" and is_manual_vwap):
                     try:
                         await asyncio.to_thread(broker.cancel_all_orders_safe, t, "BUY")
                         await asyncio.to_thread(broker.cancel_all_orders_safe, t, "SELL")
@@ -179,7 +184,6 @@ async def scheduled_vwap_init_and_cancel(context):
         await asyncio.wait_for(_do_init(), timeout=45.0)
     except Exception as e:
         logging.error(f"🚨 Fail-Safe 타임아웃 에러: {e}")
-
 # ==========================================================
 # [scheduler_trade.py] - Part 2/2 부 (하반부)
 # 🌟 100% 통합 완성본 🌟
@@ -235,10 +239,14 @@ async def scheduled_vwap_trade(context):
             
             for t in cfg.get_active_tickers():
                 version = cfg.get_version(t)
-                is_vwap_enabled = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
+                is_manual_vwap = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
                 
-                # 🚀 [V26.02 핵심 수술] V_REV 또는 V14(VWAP) 모드일 경우 엔진 가동
-                if version == "V_REV" or (version == "V14" and is_vwap_enabled):
+                # MODIFIED: [V26.03 핫픽스] V-REV 수동 모드일 경우 VWAP 타임 슬라이싱 자동 타격 락다운 (시그널 참모 유지)
+                if version == "V_REV" and is_manual_vwap:
+                    continue
+
+                # 🚀 [V26.02 핵심 수술] V_REV(Auto) 또는 V14(VWAP) 모드일 경우 엔진 가동
+                if version == "V_REV" or (version == "V14" and is_manual_vwap):
                     
                     if not vwap_cache.get(f"REV_{t}_nuked"):
                         try:
@@ -402,7 +410,7 @@ async def scheduled_vwap_trade(context):
                             
                         target_orders = rev_plan.get('orders', [])
 
-                    # 💠 [분기 2] V14 무매4 오리지널 VWAP 엔진 (신규 라우터)
+                    # 💠 [분기 2] V14 무매4 오리지널 VWAP 엔진
                     elif version == "V14":
                         h = holdings.get(t, {'qty':0, 'avg':0})
                         actual_qty = int(h.get('qty', 0))
@@ -519,7 +527,7 @@ async def scheduled_regular_trade(context):
             plans = {}
             msgs = {t: "" for t in sorted_tickers}
             all_success = {t: True for t in sorted_tickers}
-            v_rev_tickers = [] # 튜플 (ticker, version) 저장용으로 확장
+            v_rev_tickers = [] # 튜플 (ticker, version) 저장용
 
             for t in sorted_tickers:
                 if cfg.check_lock(t, "REG"): continue
@@ -531,10 +539,17 @@ async def scheduled_regular_trade(context):
                 safe_qty = int(float(h.get('qty') or 0))
                 
                 version = cfg.get_version(t)
-                is_vwap_enabled = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
+                is_manual_vwap = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
 
-                # 🚀 [V26.02 핵심 수술] V_REV 또는 V14(VWAP) 모드일 경우 예방적 LOC 덫만 장전
-                if version == "V_REV" or (version == "V14" and is_vwap_enabled):
+                # MODIFIED: [V26.03 핫픽스] V-REV 수동 모드일 경우 정규장 자동 전송 락다운 (시그널 참모 대기)
+                if version == "V_REV" and is_manual_vwap:
+                    msgs[t] += f"🛡️ <b>[{t}] V-REV 수동 시그널 모드 가동 중</b>\n"
+                    msgs[t] += "▫️ 봇 자동 주문이 락다운되었습니다. V앱에서 장 마감 30분 전 세팅으로 수동 장전하십시오.\n"
+                    await context.bot.send_message(chat_id, msgs[t], parse_mode='HTML')
+                    continue
+
+                # 🚀 [V26.02 핵심 수술] V_REV(Auto) 또는 V14(VWAP) 모드일 경우 예방적 LOC 덫 장전
+                if version == "V_REV" or (version == "V14" and is_manual_vwap):
                     loc_orders = []
                     
                     if version == "V_REV":
@@ -575,6 +590,13 @@ async def scheduled_regular_trade(context):
                                 loc_orders.append({'side': 'BUY', 'qty': b1_qty, 'price': b1_price, 'type': 'LOC', 'desc': '예방적 매수(Buy1)'})
                             if b2_qty > 0:
                                 loc_orders.append({'side': 'BUY', 'qty': b2_qty, 'price': b2_price, 'type': 'LOC', 'desc': '예방적 매수(Buy2)'})
+
+                                # MODIFIED: [V26.03 핫픽스] V-REV 자동매매 시 줍줍(Grid) 누락 복원
+                                if safe_qty > 0 and v_rev_q_qty > 0:
+                                    for n in range(1, 6):
+                                        grid_p = round(half_portion_cash / (b2_qty + n), 2)
+                                        if grid_p >= 0.01 and grid_p < b2_price:
+                                            loc_orders.append({'side': 'BUY', 'qty': 1, 'price': grid_p, 'type': 'LOC', 'desc': f'예방적 줍줍({n})'})
 
                         msgs[t] += f"🛡️ <b>[{t}] V-REV 예방적 양방향 LOC 방어선 장전 완료</b>\n"
                         if safe_qty == 0 or v_rev_q_qty == 0:
@@ -705,7 +727,13 @@ async def scheduled_after_market_lottery(context):
             if holdings is None: return
 
             for t in cfg.get_active_tickers():
-                if cfg.get_version(t) != "V_REV":
+                version = cfg.get_version(t)
+                if version != "V_REV":
+                    continue
+
+                # MODIFIED: [V26.03 핫픽스] V-REV 수동 모드일 경우 애프터마켓 로터리 덫 자동 장전 락다운
+                is_manual_vwap = getattr(cfg, 'get_manual_vwap_mode', lambda x: False)(t)
+                if is_manual_vwap:
                     continue
 
                 h = holdings.get(t) or {}
