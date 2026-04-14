@@ -5,25 +5,27 @@
 # 💡 [V24.18 하이브리드] VAvwapHybridPlugin 의존성 이름 교정 및 샌드박스 유지
 # 🚨 [V25.08 팩트 동기화] V-REV 종목 지시서 누수(DI Leak) 방어를 위한 지능형 동적 라우터(Dynamic Router) 구축
 # 🚨 [V25.19 핫픽스] 레거시 모드 감지 시 로컬 version 변수 미업데이트 맹점 팩트 교정
+# 🚀 [V26.02 핵심 수술] V14 오리지널 모드 내 LOC/VWAP 집행 방식 이원화 라우팅 탑재
 # ==========================================================
 import logging
 import pandas as pd
 from strategy_v14 import V14Strategy
 from strategy_v_avwap import VAvwapHybridPlugin  
-# NEW: [V25.08 라우터 패치] V-REV 전용 타점 산출을 위해 리버스 전략 모듈 의존성 추가
 from strategy_reversion import ReversionStrategy
+# NEW: [V26.02] V14 VWAP 분할 타격 엔진 플러그인 임포트
+from strategy_v14_vwap import V14VwapStrategy
 
 class InfiniteStrategy:
     def __init__(self, config):
         self.cfg = config
         self.v14_plugin = V14Strategy(config)
         self.v_avwap_plugin = VAvwapHybridPlugin()
-        # NEW: [V25.08 라우터 패치] V-REV 플러그인 인스턴스화
         self.v_rev_plugin = ReversionStrategy()
+        # NEW: [V26.02] V14 VWAP 플러그인 인스턴스화
+        self.v14_vwap_plugin = V14VwapStrategy(config)
 
     # ==========================================================
     # 🛡️ VWAP 시장 미시구조 거래량 지배력 코어 엔진 (60% 상향)
-    # (V-REV 전투 스케줄러와의 의존성 보존을 위해 라우터에 유지)
     # ==========================================================
     def analyze_vwap_dominance(self, df):
         if df is None or len(df) < 10:
@@ -84,27 +86,29 @@ class InfiniteStrategy:
     # 🎯 중앙 라우팅 엔진 (Dynamic Routing)
     # ==========================================================
     def get_plan(self, ticker, current_price, avg_price, qty, prev_close, ma_5day=0.0, market_type="REG", available_cash=0, is_simulation=False, vwap_status=None):
-        """
-        [중앙 라우터]
-        모든 종목의 통합 지시서(/sync) 및 정규장 17:05 선제적 주문서(Plan) 생성을 
-        대상 코어 플러그인으로 위임하거나 격리(Bypass)합니다.
-        """
         version = self.cfg.get_version(ticker)
         
         if version in ["V13", "V17", "V_VWAP", "V_AVWAP"]:
             logging.warning(f"[{ticker}] 폐기된 레거시 모드({version}) 감지. V14 엔진으로 강제 라우팅합니다.")
             self.cfg.set_version(ticker, "V14")
-            # MODIFIED: [V25.19 핫픽스] 레거시 모드 감지 후 하위 분기문 오작동 방어를 위한 로컬 변수 재할당 (Medium 11)
             version = "V14"
 
-        # MODIFIED: [V25.08 라우터 패치] V-REV 모드일 경우 V14 플러그인을 거치지 않고, 
-        # strategy_reversion.py의 get_dynamic_plan을 호출하여 최신 타점(0.999 및 /0.935)을 100% 반환하도록 동적 라우팅 이식
+        # MODIFIED: [V26.02] V14 오리지널 모드 내에서 VWAP 방식 선택 시 전용 플러그인으로 라우팅
+        is_vwap_enabled = getattr(self.cfg, 'get_manual_vwap_mode', lambda x: False)(ticker)
+        if version == "V14" and is_vwap_enabled:
+            return self.v14_vwap_plugin.get_plan(
+                ticker=ticker,
+                current_price=current_price,
+                avg_price=avg_price,
+                qty=qty,
+                prev_close=prev_close,
+                ma_5day=ma_5day,
+                market_type=market_type,
+                available_cash=available_cash,
+                is_simulation=is_simulation
+            )
+
         if version == "V_REV":
-            # 시뮬레이션용 빈 큐 데이터 또는 실제 큐 데이터를 텔레그램 컨트롤러에서 외부 주입 받도록 설계되어 있으나, 
-            # get_plan 라우터 단에서는 최소한의 뼈대(Plan Dict)만 리턴하고,
-            # 실제 0.999 및 0.935 등의 텍스트 타점은 telegram_bot.py 의 cmd_sync 함수 내부에서 직접 역산(Hard-rendering) 중이므로
-            # 여기서는 V-REV의 시뮬레이션 뼈대만 안전하게 빈 배열로 패스합니다. (telegram_bot.py 에서 덮어쓰기 완료됨)
-            # 단, v14_plugin을 거치면 1.15배수 등의 V14 시뮬레이션 오더(🧹 줍줍 등)가 섞여 들어가는 현상을 완벽히 차단합니다.
             return {
                 'core_orders': [],
                 'bonus_orders': [],
@@ -115,7 +119,7 @@ class InfiniteStrategy:
                 'one_portion': 0.0
             }
 
-        # 일반 무한매수법(V14)인 경우에만 오리지널 v14_plugin 으로 라우팅
+        # 일반 무한매수법(V14-LOC)인 경우
         return self.v14_plugin.get_plan(
             ticker=ticker,
             current_price=current_price,
@@ -130,12 +134,9 @@ class InfiniteStrategy:
         )
 
     def capture_vrev_snapshot(self, ticker, clear_price, avg_price, qty):
-        if qty <= 0:
-            return None
-            
+        if qty <= 0: return None
         realized_pnl = (clear_price - avg_price) * qty
         realized_pnl_pct = ((clear_price - avg_price) / avg_price) * 100 if avg_price > 0 else 0.0
-        
         return {
             "ticker": ticker,
             "clear_price": clear_price,

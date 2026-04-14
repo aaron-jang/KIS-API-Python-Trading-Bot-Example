@@ -15,7 +15,7 @@
 # 🚨 [V25.20 엣지 케이스 패치] 0주 새출발 시 줍줍(Sweep) 렌더링 차단 및 옵션 A 하드코딩
 # 🚨 [V25.22 타점 동기화 패치] 수동 주문 라우터(EXEC)에 야후 파이낸스(YF) 전일 종가 고정 롤오버 엔진 이식 완료
 # 🚀 [V26.01 모드 이원화] 수동 VWAP 시그널 모드(수수료 회피) 텍스트 렌더링 및 휴먼 에러 방어(30분 룰) 경고 탑재
-# 🚀 [V26.02 UI 최적화] 수동 모드 시 불필요한 줍줍(Grid) 연산 소각 및 뷰어로 수동 플래그(is_manual_vwap) 완벽 토스
+# 🚀 [V26.02 핵심 수술] V14 LOC/VWAP 2단계 모드 선택 분기 라우터 완벽 연동
 # ==========================================================
 import logging
 import datetime
@@ -400,7 +400,6 @@ class TelegramController:
                         
                         target_l1 = round(l1_price * 1.006, 2)
                         
-                        # 🚀 [V26.02 UI 최적화] 수동 모드일 때는 깔끔하게 매도/매수/줍줍 표기법 단일화 (단독/상위층 병합)
                         v_rev_guidance += f" 🔵 매도1(Pop1) ${target_l1:.2f} <b>{l1_qty}주</b> ({tag})\n"
                         
                         upper_qty = actual_qty - l1_qty
@@ -411,7 +410,6 @@ class TelegramController:
                             v_rev_guidance += f" 🔵 매도2(Pop2) ${target_upper:.2f} <b>{upper_qty}주</b> ({tag})\n"
                             
                             target_jackpot = round(actual_avg * 1.01, 2)
-                            # 수동 모드일 때는 잭팟을 아예 보여주지 않거나, 참고용으로만 표시 (장군님의 깔끔한 예시에 잭팟이 없었으므로 여기서는 자동일때만 보여줍니다)
                             if not is_manual_vwap:
                                 v_rev_guidance += f" 🎯 [전체 잭팟] ${target_jackpot:.2f} 돌파 시 <b>{actual_qty}주</b> (옵션)\n"
                     else:
@@ -432,7 +430,6 @@ class TelegramController:
                         if actual_qty == 0 or v_rev_q_qty == 0:
                             v_rev_guidance += " 🚫 <code>[0주 새출발] 기준 평단가 부재로 줍줍 생략 (1층 확보에 예산 100% 집중)</code>"
                         elif b2_qty > 0 and b2_price > 0:
-                            # 🚀 [V26.02 핵심 수술] 수동 모드일 경우 줍줍 연산 및 표출 원천 차단 (Bypass)
                             if not is_manual_vwap:
                                 grid_start = round(half_portion_cash / (b2_qty + 1), 2)
                                 grid_end = round(half_portion_cash / (b2_qty + 5), 2)
@@ -462,7 +459,6 @@ class TelegramController:
                         else:
                             avwap_status_txt = "👀 장초반 필터 스캔 및 타점 대기"
 
-                # 🚀 [V26.02 UI 최적화] 뷰어가 수동 모드임을 알 수 있도록 is_manual_vwap 플래그 토스
                 ticker_data_list.append({
                     'ticker': t, 'version': ver, 't_val': t_val, 'split': split, 'curr': curr, 'avg': actual_avg, 'qty': actual_qty,
                     'profit_amt': (curr - actual_avg) * actual_qty if actual_qty > 0 else 0, 
@@ -870,7 +866,8 @@ class TelegramController:
 # 🚨 [V25.14 분할 LOC 패치] 수동 EXEC 시 1층/상위층 완벽 분리 LOC 전송 렌더링 팩트 주입
 # 🚨 [V25.20 엣지 케이스 패치] 수동 EXEC 시 0주 새출발 줍줍(Sweep) 주문 격발 원천 차단 및 옵션A 텍스트 출력 이식
 # 🚨 [V25.22 타점 동기화 패치] 수동 주문 라우터(EXEC)에 야후 파이낸스(YF) 전일 종가 고정 롤오버 엔진 이식 완료
-# 🚀 [V26.01 모드 이원화] 수동 VWAP 모드 전환용 2단계 뎁스 라우터(SET_VER_CONFIRM) 신설 및 EXEC 발사 차단 쉴드 이식
+# 🚀 [V26.01 모드 이원화] 수동 VWAP 시그널 모드(수수료 회피) 텍스트 렌더링 및 휴먼 에러 방어(30분 룰) 경고 탑재
+# 🚀 [V26.02 핵심 수술] V14 LOC/VWAP 2단계 모드 선택 분기 라우터 완벽 연동
 # ==========================================================
 
     async def cmd_history(self, update, context):
@@ -1426,6 +1423,12 @@ class TelegramController:
                 msg, markup = self.view.get_vrev_mode_selection_menu(ticker)
                 await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
                 return
+            
+            # NEW: [V26.02 핵심 수술] V14 모드 선택 시 2단계 UI 호출
+            elif new_ver == "V14":
+                msg, markup = self.view.get_v14_mode_selection_menu(ticker)
+                await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
+                return
                 
             self.cfg.set_version(ticker, new_ver)
             self.cfg.set_upward_sniper_mode(ticker, False)
@@ -1438,22 +1441,39 @@ class TelegramController:
 
         # 🚀 [V26.01 핵심 수술] 2단계 모드 확정 라우터 신설 (Auto vs Manual)
         elif action == "SET_VER_CONFIRM":
-            mode_type = sub # "AUTO" or "MANUAL"
+            mode_type = sub # "AUTO", "MANUAL", "V14_LOC", "V14_VWAP"
             ticker = data[2]
             
-            self.cfg.set_version(ticker, "V_REV")
-            self.cfg.set_upward_sniper_mode(ticker, False)
-            if hasattr(self.cfg, 'set_avwap_hybrid_mode'):
-                self.cfg.set_avwap_hybrid_mode(ticker, False)
-                
-            if mode_type == "MANUAL":
-                self.cfg.set_manual_vwap_mode(ticker, True)
-                mode_txt = "🖐️ 수동 VWAP 모드 (수수료 회피)"
-            else:
-                self.cfg.set_manual_vwap_mode(ticker, False)
-                mode_txt = "🤖 API 자동매매 모드 (1분 정밀타격)"
-                
-            await query.edit_message_text(f"✅ <b>[{ticker}]</b> 퀀트 엔진이 <b>V_REV 역추세 하이브리드</b>로 전환되었습니다.\n▫️ <b>운용 방식:</b> {mode_txt}\n▫️ /sync 지시서를 확인해 주십시오.", parse_mode='HTML')
+            if mode_type in ["AUTO", "MANUAL"]:
+                self.cfg.set_version(ticker, "V_REV")
+                self.cfg.set_upward_sniper_mode(ticker, False)
+                if hasattr(self.cfg, 'set_avwap_hybrid_mode'):
+                    self.cfg.set_avwap_hybrid_mode(ticker, False)
+                    
+                if mode_type == "MANUAL":
+                    self.cfg.set_manual_vwap_mode(ticker, True)
+                    mode_txt = "🖐️ 수동 VWAP 모드 (수수료 회피)"
+                else:
+                    self.cfg.set_manual_vwap_mode(ticker, False)
+                    mode_txt = "🤖 API 자동매매 모드 (1분 정밀타격)"
+                    
+                await query.edit_message_text(f"✅ <b>[{ticker}]</b> 퀀트 엔진이 <b>V_REV 역추세 하이브리드</b>로 전환되었습니다.\n▫️ <b>운용 방식:</b> {mode_txt}\n▫️ /sync 지시서를 확인해 주십시오.", parse_mode='HTML')
+            
+            # NEW: [V26.02 핵심 수술] V14 모드 확정 라우터 신설
+            elif mode_type in ["V14_LOC", "V14_VWAP"]:
+                self.cfg.set_version(ticker, "V14")
+                self.cfg.set_upward_sniper_mode(ticker, False)
+                if hasattr(self.cfg, 'set_avwap_hybrid_mode'):
+                    self.cfg.set_avwap_hybrid_mode(ticker, False)
+                    
+                if mode_type == "V14_VWAP":
+                    self.cfg.set_manual_vwap_mode(ticker, True)
+                    mode_txt = "🕒 VWAP 타임 슬라이싱 (유동성 추적)"
+                else:
+                    self.cfg.set_manual_vwap_mode(ticker, False)
+                    mode_txt = "📉 LOC 단일 타격 (초안정성)"
+                    
+                await query.edit_message_text(f"✅ <b>[{ticker}]</b> 퀀트 엔진이 <b>V14 무매4</b> 모드로 전환되었습니다.\n▫️ <b>집행 방식:</b> {mode_txt}\n▫️ /sync 명령어에서 변경된 지시서를 확인하세요.", parse_mode='HTML')
 
         elif action == "MODE":
             mode_val = sub
