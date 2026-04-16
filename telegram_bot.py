@@ -1,6 +1,6 @@
 # ==========================================================
 # [telegram_bot.py]
-# 🌟 100% 통합 완성본 (V27.02 완결판) 🌟
+# 🌟 100% 통합 완성본 (V27.23 완결판) 🌟
 # ⚠️ 수술 내역: 
 # 1. /reset 시 삼위일체(본장부, 에스크로, 백업장부, 큐장부) 100% 소각 엔진 완벽 보존
 # 2. 0주 도달 시 마이너스 수익이라도 장부를 비우는(강제 손절 리셋) 로직 개방 보존
@@ -11,6 +11,7 @@
 # 🚨 [V27.02 최후 배선 연결] 비파괴 보정(CALIB) 발동 시 평단가 0.0 붕괴를 막기 위해 actual_avg 주입 파이프라인 완성
 # 🚨 [V27.15 그랜드 수술] 코파일럿 합작 - tx_lock 병목(Starvation) 해체, 0.0달러 매도 폭탄 제거, 
 # 런타임 즉사(AttributeError/KeyError) 방어막 이식, Atomic Write 도입 및 Dangling 코드 복구 완료
+# 🚀 [V27.23 그랜드 수술] 도파민 폭발 GIF 애니메이션 전송 모듈(send_animation) 자동 분기 엔진 탑재
 # ==========================================================
 import logging
 import datetime
@@ -21,7 +22,7 @@ import math
 import asyncio
 import json
 import html
-import tempfile # 🚨 Atomic Write를 위한 추가 모듈
+import tempfile 
 import yfinance as yf
 import pandas_market_calendars as mcal 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -164,7 +165,6 @@ class TelegramController:
             
         all_q[ticker] = new_q
         
-        # 🚨 [수술 완료] Atomic Write (원자적 쓰기) 도입으로 중간에 서버가 꺼져도 파일 파손(0바이트) 방지
         dir_name = os.path.dirname(os.path.abspath(q_file))
         try:
             fd, tmp_path = tempfile.mkstemp(dir=dir_name, text=True)
@@ -189,7 +189,6 @@ class TelegramController:
             )
             
             if holdings:
-                # 🚨 [수술 완료] API가 None이나 빈칸 반환 시 TypeError 방어 (Safe Casting)
                 actual_qty = int(float(holdings.get(ticker, {'qty': 0}).get('qty') or 0))
                 new_q_total = sum(int(float(item.get('qty', 0))) for item in new_q)
 
@@ -313,7 +312,6 @@ class TelegramController:
             
         await update.message.reply_text("🔄 시장 분석 및 지시서 작성 중...")
         
-        # 🚨 [수술 완료] tx_lock 범위를 최소화하여 스케줄러 병목(Starvation) 원천 해제
         async with self.tx_lock:
             cash, holdings = self.broker.get_account_balance()
             
@@ -331,7 +329,6 @@ class TelegramController:
         ticker_data_list = []
         total_buy_needed = 0.0
 
-        # 🚨 [수술 완료] jobs()[0].data 객체 참조 런타임 즉사 버그 방어
         tracking_cache = {}
         try:
             jobs = context.job_queue.jobs() if context.job_queue else []
@@ -358,7 +355,6 @@ class TelegramController:
 
         for t in sorted_tickers:
             h = holdings.get(t, {'qty':0, 'avg':0})
-            # 🚨 Lock 외부에서 비동기로 안전하게 I/O 호출
             curr = await asyncio.to_thread(self.broker.get_current_price, t, is_market_closed=(status_code == "CLOSE"))
             prev_close = await asyncio.to_thread(self.broker.get_previous_close, t)
             ma_5day = await asyncio.to_thread(self.broker.get_5day_ma, t)
@@ -455,7 +451,6 @@ class TelegramController:
                     upper_qty = logic_qty - l1_qty
                     if upper_qty > 0:
                         upper_invested = (logic_qty * actual_avg) - (l1_qty * l1_price)
-                        # 🚨 [수술 완료] 상위 레이어 평단가 0.0달러 및 손실 매도 폭탄 교정
                         safe_fallback = curr if curr and curr > 0 else actual_avg
                         upper_avg = upper_invested / upper_qty if upper_invested > 0 and upper_qty > 0 else safe_fallback
                         
@@ -543,7 +538,6 @@ class TelegramController:
                 'is_manual_vwap': is_manual_vwap
             })
             
-            # 🚨 [수술 완료] plan에 'orders' 키가 없을 경우 KeyError로 뻗어버리는 취약점 차단
             total_buy_needed += sum(o['price']*o['qty'] for o in plan.get('orders', []) if o.get('side')=='BUY')
 
         surplus = cash - total_buy_needed
@@ -699,13 +693,6 @@ class TelegramController:
                         
                         if snapshot:
                             try:
-                                import shutil
-                                current_dir = os.getcwd()
-                                bg_path = os.path.join(current_dir, "background.png")
-                                
-                                if not os.path.exists("background.png") and os.path.exists(bg_path):
-                                    shutil.copy(bg_path, "background.png")
-                                    
                                 img_path = self.view.create_profit_image(
                                     ticker=ticker, 
                                     profit=snapshot['realized_pnl'], 
@@ -714,9 +701,13 @@ class TelegramController:
                                     revenue=snapshot['clear_price'] * snapshot['cleared_qty'], 
                                     end_date=snapshot['captured_at'].strftime('%Y-%m-%d')
                                 )
+                                # 🚨 [수술 완료] GIF 애니메이션 전송 분기 처리 탑재 (V-REV 잭팟)
                                 if img_path and os.path.exists(img_path):
-                                    with open(img_path, 'rb') as photo:
-                                        await context.bot.send_photo(chat_id=chat_id, photo=photo)
+                                    with open(img_path, 'rb') as f_out:
+                                        if img_path.lower().endswith('.gif'):
+                                            await context.bot.send_animation(chat_id=chat_id, animation=f_out)
+                                        else:
+                                            await context.bot.send_photo(chat_id=chat_id, photo=f_out)
                             except Exception as e:
                                 logging.error(f"📸 V-REV 스냅샷 이미지 렌더링/발송 실패: {e}")
                                 
@@ -757,20 +748,17 @@ class TelegramController:
                                     msg += f"\n💸 <b>자동 복리 +${added_seed:,.0f}</b> 이 다음 운용 시드에 완벽하게 추가되었습니다!"
                                 await context.bot.send_message(chat_id, msg, parse_mode='HTML')
                                 try:
-                                    import shutil
-                                    current_dir = os.getcwd()
-                                    bg_path = os.path.join(current_dir, "background.png")
-                                    
-                                    if not os.path.exists("background.png") and os.path.exists(bg_path):
-                                        shutil.copy(bg_path, "background.png")
-                                        
                                     img_path = self.view.create_profit_image(
                                         ticker=ticker, profit=new_hist['profit'], yield_pct=new_hist['yield'],
                                         invested=new_hist['invested'], revenue=new_hist['revenue'], end_date=new_hist['end_date']
                                     )
+                                    # 🚨 [수술 완료] GIF 애니메이션 전송 분기 처리 탑재 (V14 정규 졸업)
                                     if img_path and os.path.exists(img_path):
-                                        with open(img_path, 'rb') as photo:
-                                            await context.bot.send_photo(chat_id=chat_id, photo=photo)
+                                        with open(img_path, 'rb') as f_out:
+                                            if img_path.lower().endswith('.gif'):
+                                                await context.bot.send_animation(chat_id=chat_id, animation=f_out)
+                                            else:
+                                                await context.bot.send_photo(chat_id=chat_id, photo=f_out)
                                 except Exception as e:
                                     logging.error(f"📸 졸업 이미지 발송 실패: {e}")
                             else:
@@ -1302,13 +1290,6 @@ class TelegramController:
                 latest_hist = sorted(hist_list, key=lambda x: x.get('end_date', ''), reverse=True)[0]
                 
                 try:
-                    import shutil
-                    current_dir = os.getcwd()
-                    bg_path = os.path.join(current_dir, "background.png")
-                    
-                    if not os.path.exists("background.png") and os.path.exists(bg_path):
-                        shutil.copy(bg_path, "background.png")
-                        
                     img_path = self.view.create_profit_image(
                         ticker=latest_hist['ticker'],
                         profit=latest_hist['profit'],
@@ -1317,9 +1298,13 @@ class TelegramController:
                         revenue=latest_hist['revenue'],
                         end_date=latest_hist['end_date']
                     )
+                    # 🚨 [수술 완료] 수동 이력 조회 시 GIF 애니메이션 전송 분기 처리 이식
                     if os.path.exists(img_path):
-                        with open(img_path, 'rb') as photo:
-                            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo)
+                        with open(img_path, 'rb') as f_out:
+                            if img_path.lower().endswith('.gif'):
+                                await context.bot.send_animation(chat_id=update.effective_chat.id, animation=f_out)
+                            else:
+                                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=f_out)
                 except Exception as e:
                     logging.error(f"📸 👑 졸업 이미지 생성/발송 실패: {e}")
                     await context.bot.send_message(update.effective_chat.id, "❌ 이미지 렌더링 모듈 장애 발생.", parse_mode='HTML')
@@ -1396,19 +1381,16 @@ class TelegramController:
                         
                     upper_qty = logic_qty - l1_qty
                     if upper_qty > 0:
-                        # 🚨 [수술 완료] API가 유효한 평단가를 주지 않았을 경우 0.0달러 매도 폭탄 발사 차단
                         if safe_avg <= 0.0:
                             msg = f"🚨 <b>[{t}] 수동 장전 차단:</b> KIS API가 유효한 평단가를 반환하지 않았습니다 (avg=0). 주문을 취소합니다."
                             await context.bot.send_message(update.effective_chat.id, msg, parse_mode='HTML')
                             return
 
                         upper_invested = (logic_qty * safe_avg) - (l1_qty * l1_price)
-                        # 🚨 [수술 완료] 상위 레이어 평단가가 0 이하일 때 안전한 현재가(혹은 L1가)로 폴백 처리
                         if upper_invested > 0 and upper_qty > 0:
                             upper_avg = upper_invested / upper_qty
                         else:
                             upper_avg = l1_price
-                            logging.warning(f"[{t}] upper_invested={upper_invested:.2f} <= 0. Falling back to l1_price={l1_price:.2f} for upper_avg.")
                             
                         target_upper = round(upper_avg * 1.005, 2)
                         loc_orders.append({'side': 'SELL', 'qty': upper_qty, 'price': target_upper, 'type': 'LOC', 'desc': '[상위 재고]'})
@@ -1752,7 +1734,6 @@ class TelegramController:
                 self.cfg._save_json(self.cfg.FILES["SPLIT"], d)
                 await update.message.reply_text(f"✅ [{ticker}] 분할: {int(val)}회")
                 
-            # 🚨 [수술 완료] 누락되어 허공에 붕 떠있던 (Dangling) 목표 수익률 설정 로직 완벽 복구
             elif state.startswith("CONF_TARGET"):
                 ticker = parts[2]
                 d = self.cfg._load_json(self.cfg.FILES["PROFIT_CFG"], self.cfg.DEFAULT_TARGET)
