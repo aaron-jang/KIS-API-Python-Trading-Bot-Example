@@ -1717,9 +1717,8 @@ class TelegramController:
                 ticker = parts[2]
                 d = self.cfg._load_json(self.cfg.FILES["PROFIT_CFG"], self.cfg.DEFAULT_TARGET)
                 d[ticker] = val
-                self.cfg._save_json(self.FILES["PROFIT_CFG"], d)
-                await update.message.reply_text(f"✅ [{ticker}] 목표: {val}%")
-                
+                self
+
             elif state.startswith("CONF_COMPOUND"):
                 if val < 0:
                     return await update.message.reply_text("❌ 오류: 복리율은 0 이상이어야 합니다.")
