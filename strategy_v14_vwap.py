@@ -13,6 +13,8 @@
 # 🚨 [V27.04 자전거래 방어] 별값매수 타점을 별값매도 대비 -$0.01 차감(Decoupling)하여 동시 타격 시 주문 거절 맹점 소각
 # 🚨 [V27.05 그랜드 수술] 기억상실, 자전거래 하극상, API Reject(소수점 주문), 인자 누락 등 5대 치명적 맹점 전면 철거
 # 🚨 [V27.06 코파일럿 합작] VWAP 매도 제논의 역설(목표량 실시간 축소) 앵커링 수술 및 fsync 객체 무결성 강화
+# 🚨 [V27.17 핫픽스] 상태 저장 I/O 예외 침묵(Amnesia) 방어 및 고립된 임시 파일(FD) 누수 원천 차단
+# 🚨 [V27.22 그랜드 수술] 0주 새출발 시 VWAP 매수 실종(Ghost Town) 버그 원천 차단 (상한선 1.15배 팩트 주입)
 # ==========================================================
 import math
 import logging
@@ -79,17 +81,22 @@ class V14VwapStrategy:
                 "SELL_QTY": int(self.executed.get("SELL_QTY", {}).get(ticker, 0))
             }
         }
+        temp_path = None
         try:
             dir_name = os.path.dirname(state_file)
-            os.makedirs(dir_name, exist_ok=True) # 🚨 [수술 완료] TOCTOU 방어: if 조건문 철거
-            fd, temp_path = tempfile.mkstemp(dir=dir_name, text=True)
+            os.makedirs(dir_name, exist_ok=True) 
+            fd, temp_path = tempfile.mkstemp(dir=dir_name or '.', text=True)
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
                 f.flush()
-                os.fsync(f.fileno()) # 🚨 [수술 완료] fd 대신 f.fileno() 사용으로 파일 객체 무결성 확보
+                os.fsync(f.fileno()) 
             os.replace(temp_path, state_file)
-        except Exception:
-            pass
+            temp_path = None
+        except Exception as e:
+            logging.critical(f"🚨 [STATE SAVE FAILED] {ticker} 상태 저장 실패. 봇 기억상실 위험! 원인: {e}")
+            if temp_path and os.path.exists(temp_path):
+                try: os.unlink(temp_path)
+                except OSError: pass
 
     def save_daily_snapshot(self, ticker, plan_data):
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -98,17 +105,22 @@ class V14VwapStrategy:
             "date": today_str,
             "plan": plan_data
         }
+        temp_path = None
         try:
             dir_name = os.path.dirname(snap_file)
             os.makedirs(dir_name, exist_ok=True)
-            fd, temp_path = tempfile.mkstemp(dir=dir_name, text=True)
+            fd, temp_path = tempfile.mkstemp(dir=dir_name or '.', text=True)
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
                 f.flush()
-                os.fsync(f.fileno()) # 🚨 [수술 완료] 파일 무결성 확보
+                os.fsync(f.fileno()) 
             os.replace(temp_path, snap_file)
-        except Exception:
-            pass
+            temp_path = None
+        except Exception as e:
+            logging.critical(f"🚨 [SNAPSHOT SAVE FAILED] {ticker} 스냅샷 저장 실패. 지시서 보존 불가! 원인: {e}")
+            if temp_path and os.path.exists(temp_path):
+                try: os.unlink(temp_path)
+                except OSError: pass
 
     def load_daily_snapshot(self, ticker):
         snap_file = self._get_snapshot_file(ticker)
@@ -164,6 +176,9 @@ class V14VwapStrategy:
         
         if qty == 0:
             p_buy = self._ceil(prev_close * 1.15)
+            # 🚨 [수술 완료] 0주 새출발 시 매수 상한선을 0.00 -> 1.15배로 주입하여 VWAP 엔진 매수 실종 방어
+            buy_star_price = p_buy 
+            
             q_buy = math.floor(dynamic_budget / p_buy) if p_buy > 0 else 0
             if q_buy > 0: core_orders.append({"side": "BUY", "price": p_buy, "qty": q_buy, "type": "LOC", "desc": "🆕새출발(VWAP대기)"})
             process_status = "✨새출발"
@@ -187,12 +202,12 @@ class V14VwapStrategy:
         plan_result = {
             'core_orders': core_orders, 'bonus_orders': [], 'orders': core_orders,
             't_val': t_val, 'one_portion': dynamic_budget, 'star_price': star_price,
-            'buy_star_price': buy_star_price,
+            'buy_star_price': buy_star_price, # 0주 새출발일 경우 p_buy(1.15배)가 안전하게 저장됨
             'star_ratio': star_ratio,
             'target_price': target_price, 'is_reverse': False,
             'process_status': process_status,
             'tracking_info': {},
-            'initial_qty': int(qty) # 🚨 [수술 완료] 스냅샷 앵커링: 장전 당시의 최초 수량을 영구 박제
+            'initial_qty': int(qty)
         }
         
         self.save_daily_snapshot(ticker, plan_result)
@@ -217,7 +232,6 @@ class V14VwapStrategy:
         target_price = float(plan_static['target_price'])
         total_budget = float(plan_static['one_portion'])
         
-        # 🚨 [수술 완료] 박제된 초기 수량을 로드하여 매도 시 제논의 역설(목표 수량 실시간 축소) 버그 원천 차단
         initial_qty = int(plan_static.get('initial_qty', qty))
         
         rem_weight = sum(self.U_CURVE_WEIGHTS[min_idx:])
@@ -237,7 +251,6 @@ class V14VwapStrategy:
                 if alloc_qty > 0:
                     orders.append({"side": "BUY", "qty": alloc_qty, "price": buy_star_price, "desc": "VWAP분할매수"})
 
-        # 🚨 [수술 완료] 실시간 qty 대신 initial_qty를 앵커로 사용하여 1/4 목표량을 절대 사수
         rem_sell_qty = int(math.ceil(initial_qty / 4)) - int(self.executed["SELL_QTY"].get(ticker, 0))
         if rem_sell_qty > 0 and star_price > 0:
             if curr_p >= star_price:
