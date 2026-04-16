@@ -1,5 +1,5 @@
 # ==========================================================
-# [scheduler_trade.py] - 🌟 100% 통합 완성본 🌟
+# [scheduler_trade.py] - 🌟 100% 통합 완성본 🌟 (Part 1)
 # ⚠️ 수술 내역: 
 # 🚨 [V25.03 긴급 수술] 타임존 Glitch 방어 및 상대적 시간 윈도우(Relative Time Window) 도입
 # 💡 하드코딩된 '15시' 비교를 폐기하고 '장 마감(market_close) 30분 전' 앵커 시스템으로 전면 교체
@@ -15,6 +15,7 @@
 # 🚨 [V26.04 스위프 패치] VWAP 엔진 데드존(15:56~15:58) 철거 및 3분간(15:57~16:00)의 지속적 클린업 스윕 피니셔로 통합
 # 🚀 [V27.01 지시서 스냅샷] 매일 17:05 확정 지시서를 박제하고, 16:05 EST에 초기화하는 파이프라인 이식 완료
 # 🚨 [V27.13 그랜드 수술] 코파일럿 합작 - all_success 딕셔너리 붕괴 차단, 상위 평단가 음수 오류 해결, 스냅샷 은폐 사고(finally) 방어 및 0주 새출발 확정 매수(/ 0.935) 원본 완벽 복구
+# 🚨 [V27.14 핫픽스] AVWAP 예산 중복 소진 차단, 스윕 잔여 주문 취소, VWAP 예외 전파 붕괴 방어막 이식
 # ==========================================================
 import os
 import logging
@@ -38,6 +39,11 @@ async def scheduled_sniper_monitor(context):
     
     est = pytz.timezone('US/Eastern')
     now_est = datetime.datetime.now(est)
+    
+    # NEW: 비동기 락 누락(NoneType) 런타임 붕괴 방어 가드
+    if context.job.data.get('tx_lock') is None:
+        logging.warning("⚠️ [sniper_monitor] tx_lock 미초기화. 이번 사이클 스킵.")
+        return
     
     try:
         nyse = mcal.get_calendar('NYSE')
@@ -79,7 +85,7 @@ async def scheduled_sniper_monitor(context):
             
     async def _do_sniper():
         async with tx_lock:
-            cash, holdings = broker.get_account_balance()
+            cash, holdings = await asyncio.to_thread(broker.get_account_balance)
             if holdings is None: return
             avwap_free_cash = cash
             
@@ -130,6 +136,10 @@ async def scheduled_sniper_monitor(context):
                             res = broker.send_order(t, "BUY", b_qty, ask_p, "LIMIT")
                             if res.get('rt_cd') == '0':
                                 tracking_cache[f"AVWAP_BOUGHT_{t}"], tracking_cache[f"AVWAP_QTY_{t}"], tracking_cache[f"AVWAP_AVG_{t}"] = True, b_qty, ask_p
+                                # NEW: [예산 중복 소진 방어] 타 티커 스캔 시 사용될 잔여 캐시에서 커밋된 예산 차감
+                                committed = b_qty * ask_p
+                                avwap_free_cash = max(0.0, avwap_free_cash - committed)
+                                
                                 await context.bot.send_message(chat_id=chat_id, text=f"🎯 <b>[{t}] 하이브리드 AVWAP 딥매수 작렬!</b>\n▫️ 수량: {b_qty}주 / 단가: ${ask_p:.2f}", parse_mode='HTML')
                     
                     elif action == 'SELL' and avwap_qty > 0:
@@ -217,6 +227,11 @@ async def scheduled_vwap_trade(context):
     est = pytz.timezone('US/Eastern')
     now_est = datetime.datetime.now(est)
     
+    # NEW: 비동기 락 누락(NoneType) 런타임 붕괴 방어 가드
+    if context.job.data.get('tx_lock') is None:
+        logging.warning("⚠️ [vwap_trade] tx_lock 미초기화. 이번 사이클 스킵.")
+        return
+        
     try:
         nyse = mcal.get_calendar('NYSE')
         schedule = nyse.schedule(start_date=now_est.date(), end_date=now_est.date())
@@ -248,6 +263,7 @@ async def scheduled_vwap_trade(context):
         0.0259, 0.0284, 0.0331, 0.0385, 0.0400, 0.0461, 0.0553, 0.0620, 0.0750, 0.1180
     ]
     
+    # 팩트 유지: SOXL 5년 백테스트 기반 U-Curve 꼬리 압축(0.1180 고정) 논리 원형 보존
     minutes_to_close = int(max(0, (market_close - now_est).total_seconds()) / 60)
     min_idx = 33 - minutes_to_close
     if min_idx < 0: min_idx = 0
@@ -256,7 +272,7 @@ async def scheduled_vwap_trade(context):
         
     async def _do_vwap():
         async with tx_lock:
-            cash, holdings = broker.get_account_balance()
+            cash, holdings = await asyncio.to_thread(broker.get_account_balance)
             if holdings is None: return
             
             for t in cfg.get_active_tickers():
@@ -303,7 +319,6 @@ async def scheduled_vwap_trade(context):
                         if total_q > 0:
                             vwap_cache[f"REV_{t}_was_holding"] = True
                             
-                        # 🚨 [수술 완료] total_q가 0일 때 jackpot_trigger 연산 시 ZeroDivision 차단
                         if total_q > 0:
                             avg_price = sum(item.get("qty", 0) * item.get("price", 0.0) for item in q_data) / total_q
                             jackpot_trigger = avg_price * 1.010
@@ -367,6 +382,14 @@ async def scheduled_vwap_trade(context):
                                                 if my_execs:
                                                     ccld_qty = sum(int(float(ex.get('ft_ccld_qty') or 0)) for ex in my_execs)
                                                     if ccld_qty >= actual_sweep_qty: break
+                                            
+                                            # NEW: [부분 체결 잔여 물량 유령화(Ghost Order) 방어]
+                                            if ccld_qty < actual_sweep_qty:
+                                                try:
+                                                    await asyncio.to_thread(broker.cancel_order, t, odno)
+                                                    await asyncio.sleep(0.5)
+                                                except Exception as e_cancel:
+                                                    logging.warning(f"⚠️ [{t}] 스윕 잔여 주문 취소 실패: {e_cancel}")
                                                     
                                             if ccld_qty > 0:
                                                 strategy_rev.record_execution(t, "SELL", ccld_qty, exec_price)
@@ -420,7 +443,8 @@ async def scheduled_vwap_trade(context):
                                 hidden = True
                             except: pass
                             
-                        # 🚨 [수술 완료] try-finally 블록을 사용하여 에러 발생 시에도 스냅샷 파일 무조건 복원
+                        # NEW: [VWAP 예외 전파 붕괴 방어막] 에러 발생 시 해당 티커만 격리(건너뜀)하여 타 티커의 VWAP 보호
+                        rev_plan = None
                         try:
                             rev_plan = strategy_rev.get_dynamic_plan(
                                 ticker=t, curr_p=curr_p, prev_c=prev_c, 
@@ -428,11 +452,15 @@ async def scheduled_vwap_trade(context):
                                 min_idx=min_idx, alloc_cash=rev_daily_budget, q_data=virtual_q_data,
                                 is_snapshot_mode=False
                             )
+                        except Exception as plan_e:
+                            logging.error(f"🚨 [{t}] get_dynamic_plan 실행 에러 (해당 티커 건너뜀): {plan_e}")
                         finally:
                             if hidden and os.path.exists(snap_file + ".hide"):
                                 try: os.rename(snap_file + ".hide", snap_file)
-                                except Exception as e: logging.error(f"🚨 스냅샷 파일 복구 실패: {e}")
+                                except Exception as e2: logging.error(f"🚨 스냅샷 파일 복구 실패: {e2}")
                         
+                        if rev_plan is None:
+                            continue
                         if not is_zero_start and rev_plan.get('trigger_loc') and minutes_to_close >= 15:
                             vwap_cache[f"REV_{t}_loc_fired"] = True
                             msg = f"🛡️ <b>[{t}] 60% 거래량 지배력 감지 (추세장 전환)</b>\n"
@@ -553,8 +581,14 @@ async def scheduled_regular_trade(context):
     RETRY_DELAY = 60
 
     async def _do_regular_trade():
+        # NEW: [스냅샷 타임존 일치 교정] 서버 로컬 타임(KST/UTC) 의존성을 탈피하고 EST 팩트 기반 스냅샷 날짜 선 산출
+        est = pytz.timezone('US/Eastern')
+        _now_est = datetime.datetime.now(est)
+        today_str_est = _now_est.strftime("%Y-%m-%d")
+        tomorrow_str_est = (_now_est + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        
         async with tx_lock:
-            cash, holdings = broker.get_account_balance()
+            cash, holdings = await asyncio.to_thread(broker.get_account_balance)
             if holdings is None:
                 return False, "❌ 계좌 정보를 불러오지 못했습니다."
 
@@ -600,15 +634,28 @@ async def scheduled_regular_trade(context):
                             l1_price = 0.0
                             if dates_in_queue:
                                 lots_1 = [item for item in q_data if item.get('date') == dates_in_queue[0]]
-                                l1_qty = sum(item.get('qty', 0) for item in lots_1)
+                                l1_qty_raw = sum(item.get('qty', 0) for item in lots_1)
+                                
+                                # NEW: [큐 원장 불일치 감지 및 초과 매도(Oversell) 차단] 브로커 주문 거절 무한 루프 방어를 위해 실제 잔량 억제(Clamp)
+                                if l1_qty_raw > safe_qty:
+                                    logging.error(f"🚨 [{t}] 큐 원장 불일치 감지! 큐 l1={l1_qty_raw}주 > 실제 보유={safe_qty}주. 실제 보유량으로 강제 클램프합니다.")
+                                    await context.bot.send_message(
+                                        chat_id, 
+                                        f"⚠️ <b>[{t}] 큐/브로커 원장 불일치!</b>\n"
+                                        f"▫️ 내부 큐: {l1_qty_raw}주 / 실제 보유: {safe_qty}주\n"
+                                        f"▫️ 초과 매도 방지를 위해 실제 보유량({safe_qty}주)으로 1층 수량을 조정합니다.",
+                                        parse_mode='HTML'
+                                    )
+                                l1_qty = min(l1_qty_raw, safe_qty)
+                                
                                 if l1_qty > 0:
-                                    l1_price = sum(item.get('qty', 0) * item.get('price', 0.0) for item in lots_1) / l1_qty
+                                    l1_price = sum(item.get('qty', 0) * item.get('price', 0.0) for item in lots_1) / l1_qty_raw
                             
                             target_l1 = round(l1_price * 1.006, 2)
                             if l1_qty > 0:
                                 loc_orders.append({'side': 'SELL', 'qty': l1_qty, 'price': target_l1, 'type': 'LOC', 'desc': '[1층 단독]'})
                                 
-                            upper_qty = safe_qty - l1_qty
+                            upper_qty = safe_qty - l1_qty # 수학적으로 무조건 0 이상의 팩트 보장
                             if upper_qty > 0:
                                 # 🚨 [수술 완료] 상위 레이어 평단가 마이너스(음수) 오류 원천 차단
                                 total_inv = safe_qty * safe_avg
@@ -650,10 +697,9 @@ async def scheduled_regular_trade(context):
                         if hasattr(strategy_rev, 'save_daily_snapshot'):
                             strategy_rev.save_daily_snapshot(t, plan_result)
                             
-                            today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-                            tomorrow_str = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-                            old_snap = f"data/daily_snapshot_REV_{today_str}_{t}.json"
-                            new_snap = f"data/daily_snapshot_REV_{tomorrow_str}_{t}.json"
+                            # MODIFIED: [스냅샷 타임존 일치 교정] EST 팩트 기반 파일명 적용
+                            old_snap = f"data/daily_snapshot_REV_{today_str_est}_{t}.json"
+                            new_snap = f"data/daily_snapshot_REV_{tomorrow_str_est}_{t}.json"
                             if os.path.exists(old_snap):
                                 import shutil
                                 shutil.copy(old_snap, new_snap)
@@ -674,10 +720,9 @@ async def scheduled_regular_trade(context):
                         )
                         loc_orders = v14_plan.get('core_orders', [])
                         
-                        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-                        tomorrow_str = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-                        old_snap = f"data/daily_snapshot_V14VWAP_{today_str}_{t}.json"
-                        new_snap = f"data/daily_snapshot_V14VWAP_{tomorrow_str}_{t}.json"
+                        # MODIFIED: [스냅샷 타임존 일치 교정] EST 팩트 기반 파일명 적용
+                        old_snap = f"data/daily_snapshot_V14VWAP_{today_str_est}_{t}.json"
+                        new_snap = f"data/daily_snapshot_V14VWAP_{tomorrow_str_est}_{t}.json"
                         if os.path.exists(old_snap):
                             import shutil
                             shutil.copy(old_snap, new_snap)
@@ -795,7 +840,7 @@ async def scheduled_after_market_lottery(context):
 
     async def _do_lottery():
         async with tx_lock:
-            cash, holdings = broker.get_account_balance()
+            cash, holdings = await asyncio.to_thread(broker.get_account_balance)
             if holdings is None: return
 
             for t in cfg.get_active_tickers():
