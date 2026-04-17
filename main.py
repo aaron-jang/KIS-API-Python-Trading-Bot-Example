@@ -27,11 +27,19 @@ from trading_bot.broker.kis_api import KoreaInvestmentBroker
 from trading_bot.strategy.infinite import InfiniteStrategy
 from trading_bot.telegram.commands import TelegramController
 
+<<<<<<< HEAD
 from trading_bot.strategy.queue_ledger import QueueLedger
 from trading_bot.strategy.reversion import ReversionStrategy
 from trading_bot.strategy.volatility import VolatilityEngine
 
 from trading_bot.scheduler.core_jobs import (
+=======
+from queue_ledger import QueueLedger
+from strategy_reversion import ReversionStrategy
+from volatility_engine import VolatilityEngine
+
+from scheduler_core import (
+>>>>>>> upstream/main
     scheduled_token_check,
     scheduled_auto_sync_summer,
     scheduled_auto_sync_winter,
