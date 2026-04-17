@@ -1,5 +1,5 @@
 # ==========================================================
-# [telegram_view.py] - Part 1/2 부 (상반부)
+# [telegram_view.py] - 🌟 100% 통합 무결점 완성본 🌟
 # 💡 V25.05 💠 V-REV 하이브리드 & V14 무매 UI 렌더링 엔진
 # ⚠️ 수술 내역: 
 # 1. 덮어쓰기 사고로 소실된 TelegramView 클래스 헤더 및 필수 UI 모듈 100% 복원
@@ -14,23 +14,37 @@
 # 🚀 [V26.01 뷰포트 수술] V_REV 2단계 모드 선택(자동 vs 수동 VWAP) 전용 렌더러 신설 완료
 # 🚀 [V26.02 UI 최적화] 수동 모드 타이틀 '(수동)' 치환 및 VWAP 타임 스케줄 렌더링 은폐 완벽 이식
 # 🚀 [V26.02 핵심 수술] V14 오리지널 집행 방식(LOC/VWAP) 선택용 2단계 렌더러 신설 및 지시서 동기화
+# 🚨 [V26.05 UI 렌더링 패치] 졸업 이미지 폰트(Microscopic Bitmap) 붕괴 방어용 로컬 및 범용 폰트 경로 대거 증설
+# 🚨 [V26.06 런타임 붕괴 방어] PIL 비트맵 폰트 강제 폴백 시 anchor 정렬 미지원에 따른 에러 우회 래퍼 이식
+# 🚀 [V27.00 자가 업데이트 라우터 이식] 2단계 승인 대기 확인 UI 렌더링 추가
+# 🚨 [V27.01 UI 팩트 교정] 휴먼 에러 방지를 위한 /update 명령어 최하단 격리 렌더링 적용
+# 🚨 [V27.16 그랜드 수술] 코파일럿 합작 - KeyError 런타임 즉사 방어(Safe Get), FileNotFoundError 졸업카드 증발 차단, 외화 RP 이중 계산 환각 UI 제거 및 유령 지층(None Date) 통제망 구축 완료
+# 🚀 [V27.24 그랜드 수술] 도파민 폭발! GIF 애니메이션 렌더링을 위한 멀티 프레임 스티칭(Stitching) 코어 및 Fallback 엔진 탑재 완료
+# 🚨 [V27.25 UI 팩트 교정] 시작화면(/start) 스케줄러 타임라인 08:30 -> 10:00 KST 확정 정산 시간으로 시각적 동기화 완료
 # ==========================================================
 import os
 import math
+import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageSequence
 
 class TelegramView:
     def __init__(self):
         self.bold_font_paths = [
+            "NanumGothicBold.ttf", "font_bold.ttf", "font.ttf",
             "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf", 
-            "C:/Windows/Fonts/malgunbd.ttf", 
-            "AppleGothic.ttf"
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "C:/Windows/Fonts/malgunbd.ttf", "C:/Windows/Fonts/arialbd.ttf",
+            "AppleGothic.ttf", "Arial.ttf"
         ]
         self.reg_font_paths = [
+            "NanumGothic.ttf", "font_reg.ttf", "font.ttf",
             "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", 
-            "C:/Windows/Fonts/malgun.ttf", 
-            "AppleGothic.ttf"
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans.ttf",
+            "C:/Windows/Fonts/malgun.ttf", "C:/Windows/Fonts/arial.ttf",
+            "AppleGothic.ttf", "Arial.ttf"
         ]
 
     def _load_best_font(self, font_paths, size):
@@ -41,15 +55,30 @@ class TelegramView:
                 continue
         return ImageFont.load_default()
 
+    def _safe_draw_text(self, draw, xy, text, font, fill, anchor="mm"):
+        try:
+            draw.text(xy, str(text), font=font, fill=fill, anchor=anchor)
+        except Exception:
+            try:
+                if anchor == "mm":
+                    est_w = 6 * len(str(text))
+                    est_h = 10
+                    draw.text((xy[0] - est_w / 2, xy[1] - est_h / 2), str(text), font=font, fill=fill)
+                else:
+                    draw.text(xy, str(text), font=font, fill=fill)
+            except Exception:
+                pass
+
     def get_start_message(self, target_hour, season_icon, latest_version):
         dst_state = "🌞서머타임 ON" if target_hour == 17 else "❄️서머타임 OFF"
         
         msg = f"🌌 [ 인피니트 스노우볼 {latest_version} ]\n"
-        msg += "💠 2대 퀀트 코어 + AVWAP 하이브리드\n\n"
+        msg += "💠 무결성 V-REV & 타임 슬라이싱\n\n"
         
         msg += f"🕒 [ 운영 스케줄 ({dst_state}) ]\n"
         msg += "🔹 6시간 간격 : 🔑 API 토큰 자동 갱신\n"
-        msg += "🔹 08:30 : 📝 잔고 동기화 & 자동 복리\n"
+        # 🚨 [V27.25 팩트 교정] 08:30 가결제 스캔을 10:00 확정 정산 스캔 텍스트로 동기화 완료
+        msg += "🔹 10:00 : 📝 확정 정산 스캔 & 졸업 발급\n"
         msg += f"🔹 {target_hour}:00 : 🔐 매매 초기화 및 변동성 락온\n"
         msg += f"🔹 {target_hour}:05 : 🌃 통합 주문 자동 실행\n\n"
         
@@ -64,8 +93,24 @@ class TelegramView:
         msg += "▶️ /version : 🛠️ 버전 및 업데이트 내역\n\n"
         
         msg += "⚠️ /reset : 🔓 비상 해제 메뉴 (락/리버스)\n"
-        msg += "┗ 🚨 수동 닻 올리기: 예산 부족으로 리버스 진입 후 외화RP매도 등 예수금을 추가 입금하셨다면, 이 메뉴에서 반드시 '리버스 강제 해제'를 눌러 닻을 올려주세요!"
+        msg += "┗ 🚨 수동 닻 올리기: 예산 부족으로 리버스 진입 후 외화RP매도 등 예수금을 추가 입금하셨다면, 이 메뉴에서 반드시 '리버스 강제 해제'를 눌러 닻을 올려주세요!\n\n"
+        
+        msg += "⚠️ /update : 🚀 시스템 자가 업데이트 (경고: 로컬 코드가 초기화됨)\n"
         return msg
+
+    def get_update_confirm_menu(self):
+        msg = "🚨 <b>[ 시스템 코어 자가 업데이트 (Self-Update) ]</b>\n\n"
+        msg += "깃허브(GitHub) 원격 서버에 접속하여 <b>최신 퀀트 엔진 코드</b>를 로컬에 강제로 동기화(Hard Reset)합니다.\n\n"
+        msg += "⚠️ <b>[ 파괴적 동기화 경고 ]</b>\n"
+        msg += "▫️ 사용자가 직접 수정한 파이썬 코드는 <b>전부 초기화</b>됩니다.\n"
+        msg += "▫️ 단, 개인 설정(.env)과 장부 데이터(data/ 폴더)는 완벽히 <b>보존</b>됩니다.\n\n"
+        msg += "포트폴리오 매니저의 최종 승인을 대기합니다."
+
+        keyboard = [
+            [InlineKeyboardButton("🔥 네, 즉시 업데이트를 강행합니다", callback_data="UPDATE:CONFIRM")],
+            [InlineKeyboardButton("❌ 아니오, 취소합니다", callback_data="UPDATE:CANCEL")]
+        ]
+        return msg, InlineKeyboardMarkup(keyboard)
 
     def get_reset_menu(self, active_tickers):
         msg = "🔥 <b>[ 삼위일체 소각 (Nuke) 프로토콜 ]</b>\n\n"
@@ -128,14 +173,21 @@ class TelegramView:
             for idx, item in enumerate(reversed(q_data)):
                 qty = item.get('qty', 0)
                 price = item.get('price', 0.0)
-                date_str = item.get('date', '')[:10]
+                item_date = item.get('date')
                 real_idx = len(q_data) - idx
-                msg += f"{real_idx:<3} {date_str[5:]} {qty:>4}주 ${price:.2f}\n"
                 
-                keyboard.append([
-                    InlineKeyboardButton(f"✏️ {real_idx}층 수정", callback_data=f"EDIT_Q:{ticker}:{item.get('date')}"),
-                    InlineKeyboardButton(f"🗑️ {real_idx}층 삭제", callback_data=f"DEL_REQ:{ticker}:{item.get('date')}")
-                ])
+                if item_date is None:
+                    msg += f"⚠️ {real_idx:<3} [날짜 손상] {qty:>4}주 ${price:.2f}\n"
+                    keyboard.append([
+                        InlineKeyboardButton(f"⚠️ {real_idx}층 (손상 - 수정 불가)", callback_data=f"QUEUE:VIEW:{ticker}")
+                    ])
+                else:
+                    date_str = item_date[:10]
+                    msg += f"{real_idx:<3} {date_str[5:]} {qty:>4}주 ${price:.2f}\n"
+                    keyboard.append([
+                        InlineKeyboardButton(f"✏️ {real_idx}층 수정", callback_data=f"EDIT_Q:{ticker}:{item_date}"),
+                        InlineKeyboardButton(f"🗑️ {real_idx}층 삭제", callback_data=f"DEL_REQ:{ticker}:{item_date}")
+                    ])
                 
         msg += "-"*30 + "</code>\n\n"
         msg += "🚨 <b>[ 비상 수혈 통제소 ]</b>\n"
@@ -158,9 +210,6 @@ class TelegramView:
             [InlineKeyboardButton("❌ 취소 (돌아가기)", callback_data=f"QUEUE:VIEW:{ticker}")]
         ]
         return msg, InlineKeyboardMarkup(keyboard)
-# ==========================================================
-# [telegram_view.py] - Part 2/2 부 (하반부)
-# ==========================================================
 
     def get_emergency_moc_confirm_menu(self, ticker, emergency_qty, emergency_price):
         msg = f"🚨 <b>[{ticker} 비상 수혈 최종 승인 대기]</b> 🚨\n\n"
@@ -209,7 +258,7 @@ class TelegramView:
         page_items = history_data[start_idx:end_idx]
 
         msg = "🚀 <b>[ PIPIOS 퀀트 엔진 패치노트 ]</b>\n"
-        msg += "▫️ 현재 시스템: <code>V26.02 하이브리드 코어</code>\n\n"
+        msg += "▫️ 현재 시스템: <code>V27.00 하이브리드 코어</code>\n\n"
         
         for item in page_items:
             if isinstance(item, str):
@@ -248,13 +297,6 @@ class TelegramView:
         return msg, InlineKeyboardMarkup(keyboard)
 
     def create_sync_report(self, status_text, dst_text, cash, rp_amount, ticker_data, is_trade_active, p_trade_data=None):
-        total_required_budget = sum(
-            t_info.get('one_portion', 0.0) 
-            for t_info in ticker_data 
-            if not t_info.get('is_locked', False)
-        )
-        
-        dynamic_rp_amount = max(0.0, cash - total_required_budget)
         total_locked = sum(t_info.get('escrow', 0.0) for t_info in ticker_data)
         
         header_msg = f"📜 <b>[ 통합 지시서 ({status_text}) ]</b>\n📅 <b>{dst_text}</b>\n"
@@ -267,7 +309,7 @@ class TelegramView:
         else:
             header_msg += f"💵 주문가능금액: ${cash:,.2f}\n"
             
-        header_msg += f"🏛️ RP 투자권장: ${dynamic_rp_amount:,.2f}\n"
+        header_msg += f"🏛️ RP 투자권장: ${rp_amount:,.2f}\n"
         header_msg += "----------------------------\n\n"
         
         body_msg = ""
@@ -289,7 +331,6 @@ class TelegramView:
                 v_mode_display = "V_REV 역추세(수동)" if is_manual_vwap else "V_REV 역추세"
                 main_icon = "⚖️"
             else:
-                # MODIFIED: [V26.02] V14 VWAP 모드 텍스트 렌더링 동기화
                 v_mode_display = "무매4 (VWAP)" if is_manual_vwap else "무매4 (LOC)"
                 main_icon = "💎"
                 
@@ -393,17 +434,21 @@ class TelegramView:
                     keyboard.append([InlineKeyboardButton(f"🚀 {t} V-REV 방어선 수동 장전", callback_data=f"EXEC:{t}")])
                 
             else:
-                # MODIFIED: [V26.02] V14 VWAP 모드일 경우 가이던스 추가 렌더링
                 if is_manual_vwap and not is_rev:
                     body_msg += "⏱️ <b>VWAP 스케줄:</b> 장 마감 30분 전 ➔ 1분 단위 유동성 분할 타격\n"
                     
                 body_msg += f"📋 <b>[주문 계획 - {proc_status}]</b>\n"
                 plan_orders = t_info.get('plan', {}).get('orders', [])
+                
                 if plan_orders:
-                    jup_orders = [o for o in plan_orders if "줍줍" in o['desc']]
-                    n_orders = [o for o in plan_orders if "줍줍" not in o['desc']]
+                    jup_orders = [o for o in plan_orders if "줍줍" in o.get('desc', '')]
+                    n_orders = [o for o in plan_orders if "줍줍" not in o.get('desc', '')]
     
                     for o in n_orders:
+                        if not all(k in o for k in ('side', 'desc', 'type', 'price', 'qty')):
+                            body_msg += " ⚠️ <i>[렌더링 오류: 주문 데이터 불완전 - 렌더링 스킵]</i>\n"
+                            continue
+                            
                         ico = "🔴" if o['side'] == 'BUY' else "🔵"
                         desc = o['desc']
                         
@@ -417,8 +462,9 @@ class TelegramView:
                         body_msg += f" {ico} {desc}: <b>${o['price']} x {o['qty']}주</b>{type_disp}\n"
     
                     if jup_orders:
-                        prices = sorted([o['price'] for o in jup_orders], reverse=True)
-                        body_msg += f" 🧹 줍줍({len(jup_orders)}개): <b>${prices[0]} ~ ${prices[-1]} (LOC)</b>\n"
+                        prices = sorted([o['price'] for o in jup_orders if 'price' in o], reverse=True)
+                        if prices:
+                            body_msg += f" 🧹 줍줍({len(jup_orders)}개): <b>${prices[0]} ~ ${prices[-1]} (LOC)</b>\n"
                     
                     if is_trade_active:
                         if t_info.get('is_locked', False):
@@ -458,7 +504,6 @@ class TelegramView:
                 ver_display = "V_REV 역추세"
             else:
                 icon = "💎"
-                # MODIFIED: [V26.02] V14 타이틀 동적 변환
                 ver_display = "무매4 (VWAP)" if is_manual_vwap else "무매4 (LOC)"
                 
             split_cnt = int(config.get_split_count(t))
@@ -478,7 +523,6 @@ class TelegramView:
                 keyboard.append(row_init)
             else:
                 msg += f"▫️ 분할: {split_cnt}회\n▫️ 목표: {target_pct}%\n▫️ 자동복리: {comp_rate}%\n"
-                # NEW: [V26.02] V14 집행 방식 팩트 노출
                 v14_mode_txt = "VWAP 타임 슬라이싱 (유동성 추적)" if is_manual_vwap else "LOC 단일 타격 (초안정성)"
                 msg += f"▫️ 집행: <b>{v14_mode_txt}</b>\n\n"
                 
@@ -533,7 +577,6 @@ class TelegramView:
         ]
         return msg, InlineKeyboardMarkup(keyboard)
 
-    # NEW: [V26.02 핵심 수술] V14 오리지널 집행 방식(LOC/VWAP) 선택용 렌더러
     def get_v14_mode_selection_menu(self, ticker):
         msg = f"💎 <b>[{ticker} 무매4 오리지널 집행 방식 선택]</b>\n\n"
         msg += "오리지널 무한매수법(V14)의 당일 예산 집행 방식을 선택해 주십시오.\n\n"
@@ -620,57 +663,96 @@ class TelegramView:
     def create_profit_image(self, ticker, profit, yield_pct, invested, revenue, end_date):
         W, H = 600, 920 
         IMG_H = 430 
+        os.makedirs("data", exist_ok=True)
         
-        img = Image.new('RGB', (W, H), color='#1E222D')
-        draw = ImageDraw.Draw(img)
-        
-        try:
-            if os.path.exists("background.png"):
-                bg = Image.open("background.png").convert("RGB")
-                bg_ratio = bg.width / bg.height
-                if bg_ratio > (W / IMG_H):
-                    new_w = int(IMG_H * bg_ratio)
-                    bg = bg.resize((new_w, IMG_H), Image.Resampling.LANCZOS).crop(((new_w - W) // 2, 0, (new_w + W) // 2, IMG_H))
-                else:
-                    new_h = int(W / bg_ratio)
-                    bg = bg.resize((W, new_h), Image.Resampling.LANCZOS).crop((0, (new_h - IMG_H) // 2, W, (new_h + IMG_H) // 2))
-                img.paste(bg, (0, 0))
-            else:
-                draw.rectangle([0, 0, W, IMG_H], fill="#111217")
-        except Exception: 
-            draw.rectangle([0, 0, W, IMG_H], fill="#111217")
-
+        # 폰트 로드
         f_title = self._load_best_font(self.bold_font_paths, 65)
         f_p = self._load_best_font(self.bold_font_paths, 85)
         f_y = self._load_best_font(self.reg_font_paths, 40)
         f_b_val = self._load_best_font(self.bold_font_paths, 32)
         f_b_lbl = self._load_best_font(self.reg_font_paths, 22)
+        
+        # 반복되는 텍스트 도장 찍기 내부 함수화 (DRY 원칙)
+        def apply_overlay(img_canvas):
+            draw = ImageDraw.Draw(img_canvas)
+            y_title = IMG_H + 60
+            draw.rectangle([W/2 - 140, y_title - 45, W/2 + 140, y_title + 45], fill="#2A2F3D")
+            self._safe_draw_text(draw, (W/2, y_title), f"{ticker}", font=f_title, fill="white", anchor="mm")
+            
+            color = "#007AFF" if profit < 0 else "#FF3B30"
+            sign = "-" if profit < 0 else "+"
+            
+            y_profit = y_title + 105
+            self._safe_draw_text(draw, (W/2, y_profit), f"{sign}${abs(profit):,.2f}", font=f_p, fill=color, anchor="mm")
+            y_yield = y_profit + 75
+            self._safe_draw_text(draw, (W/2, y_yield), f"YIELD {sign}{abs(yield_pct):,.2f}%", font=f_y, fill=color, anchor="mm")
+            
+            y_box = y_yield + 60
+            draw.rectangle([40, y_box, 290, y_box + 100], fill="#2A2F3D")
+            self._safe_draw_text(draw, (165, y_box + 35), f"${invested:,.2f}", font=f_b_val, fill="white", anchor="mm")
+            self._safe_draw_text(draw, (165, y_box + 75), "TOTAL INVESTED", font=f_b_lbl, fill="#8E8E93", anchor="mm")
+            
+            draw.rectangle([310, y_box, 560, y_box + 100], fill="#2A2F3D")
+            self._safe_draw_text(draw, (435, y_box + 35), f"${revenue:,.2f}", font=f_b_val, fill="white", anchor="mm")
+            self._safe_draw_text(draw, (435, y_box + 75), "TOTAL REVENUE", font=f_b_lbl, fill="#8E8E93", anchor="mm")
+            
+            self._safe_draw_text(draw, (W/2, H - 35), f"{end_date}", font=f_b_lbl, fill="#636366", anchor="mm")
+            return img_canvas
 
-        y_title = IMG_H + 60
-        draw.rectangle([W/2 - 140, y_title - 45, W/2 + 140, y_title + 45], fill="#2A2F3D")
-        draw.text((W/2, y_title), f"{ticker}", font=f_title, fill="white", anchor="mm")
-        
-        color = "#007AFF" if profit < 0 else "#FF3B30"
-        sign = "-" if profit < 0 else "+"
-        
-        y_profit = y_title + 105
-        draw.text((W/2, y_profit), f"{sign}${abs(profit):,.2f}", font=f_p, fill=color, anchor="mm")
-        
-        y_yield = y_profit + 75
-        draw.text((W/2, y_yield), f"YIELD {sign}{abs(yield_pct):,.2f}%", font=f_y, fill=color, anchor="mm")
-        
-        y_box = y_yield + 60
-        
-        draw.rectangle([40, y_box, 290, y_box + 100], fill="#2A2F3D")
-        draw.text((165, y_box + 35), f"${invested:,.2f}", font=f_b_val, fill="white", anchor="mm")
-        draw.text((165, y_box + 75), "TOTAL INVESTED", font=f_b_lbl, fill="#8E8E93", anchor="mm")
-        
-        draw.rectangle([310, y_box, 560, y_box + 100], fill="#2A2F3D")
-        draw.text((435, y_box + 35), f"${revenue:,.2f}", font=f_b_val, fill="white", anchor="mm")
-        draw.text((435, y_box + 75), "TOTAL REVENUE", font=f_b_lbl, fill="#8E8E93", anchor="mm")
-        
-        draw.text((W/2, H - 35), f"{end_date}", font=f_b_lbl, fill="#636366", anchor="mm")
-        
+        def resize_and_crop(bg_frame):
+            bg_ratio = bg_frame.width / bg_frame.height
+            if bg_ratio > (W / IMG_H):
+                new_w = int(IMG_H * bg_ratio)
+                bg_res = bg_frame.resize((new_w, IMG_H), Image.Resampling.LANCZOS)
+                return bg_res.crop(((new_w - W) // 2, 0, (new_w + W) // 2, IMG_H))
+            else:
+                new_h = int(W / bg_ratio)
+                bg_res = bg_frame.resize((W, new_h), Image.Resampling.LANCZOS)
+                return bg_res.crop((0, (new_h - IMG_H) // 2, W, (new_h + IMG_H) // 2))
+
+        # 🚀 1순위: GIF 파일(움짤)이 존재할 경우 멀티 프레임 스티칭 처리
+        if os.path.exists("background.gif"):
+            try:
+                bg_gif = Image.open("background.gif")
+                duration = bg_gif.info.get('duration', 100)
+                loop = bg_gif.info.get('loop', 0)
+                
+                frames = []
+                for frame in ImageSequence.Iterator(bg_gif):
+                    frame_rgba = frame.convert("RGBA")
+                    # 배경이 되는 검은색 캔버스 신규 생성
+                    canvas = Image.new('RGB', (W, H), color='#1E222D')
+                    # 프레임 이미지를 규격에 맞게 리사이징 & 크롭
+                    bg_cropped = resize_and_crop(frame_rgba)
+                    # 캔버스 상단에 움짤 1개 프레임 부착
+                    canvas.paste(bg_cropped.convert("RGB"), (0, 0))
+                    # 하단에 텍스트 데이터 오버레이(도장 찍기)
+                    canvas = apply_overlay(canvas)
+                    frames.append(canvas)
+                
+                fname = f"data/profit_{ticker}.gif"
+                if frames:
+                    # 30~50장의 프레임을 다시 하나의 애니메이션으로 압축 저장 (Save_all=True)
+                    frames[0].save(fname, save_all=True, append_images=frames[1:], duration=duration, loop=loop)
+                    return fname
+            except Exception as e:
+                logging.error(f"🚨 GIF 렌더링 실패, PNG로 강제 폴백: {e}")
+
+        # 🛡️ 2순위: GIF가 없거나 렌더링 에러 발생 시 PNG 이미지로 폴백(Fallback) 처리
+        img = Image.new('RGB', (W, H), color='#1E222D')
+        try:
+            if os.path.exists("background.png"):
+                bg = Image.open("background.png").convert("RGB")
+                bg_cropped = resize_and_crop(bg)
+                img.paste(bg_cropped, (0, 0))
+            else:
+                draw = ImageDraw.Draw(img)
+                draw.rectangle([0, 0, W, IMG_H], fill="#111217")
+        except Exception:
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([0, 0, W, IMG_H], fill="#111217")
+            
+        img = apply_overlay(img)
         fname = f"data/profit_{ticker}.png"
         img.save(fname)
         return fname
@@ -682,4 +764,3 @@ class TelegramView:
             [InlineKeyboardButton("💎 SOXL + TQQQ 통합", callback_data="TICKER:ALL")]
         ]
         return f"🔄 <b>[ 운용 종목 선택 ]</b>\n현재: <b>{', '.join(current_tickers)}</b>", InlineKeyboardMarkup(keyboard)
-

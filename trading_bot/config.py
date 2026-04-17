@@ -1,11 +1,14 @@
 # ==========================================================
-# [config.py] - 🌟 100% 통합 완성본 🌟
+# [config.py] - 🌟 100% 통합 완성본 🌟 (Part 1)
 # ⚠️ V_REV 도입에 따른 P매매 잔재 완벽 소각 버전
 # 💡 [V24.10 수술] 동적 에스크로 락다운 깃발(Flag) 제어 로직 추가
 # 💡 [V25.00 수술] AVWAP 하이브리드 전술 상태 저장(캐싱) 파일 경로 및 함수 이식
 # 🚨 [V25.19 핫픽스] 빈 장부 스캔 시 IndexError 런타임 붕괴 완벽 방어
 # 🚨 [V25.19 핫픽스] 에스크로(Escrow) 3대 관리 함수(set/add/clear) 팩트 기반 완전 구현
 # 🚀 [V26.00 승격] 수동 VWAP 시그널 모드(Manual Mode) 독립 플래그 및 캐싱 엔진 신설 탑재
+# 🚀 [V26.07 확정 순수익 렌더링 패치] 명예의 전당 및 졸업 카드 발급 시 한투 OpenAPI 왕복 수수료(0.5%) 완벽 차감 이식
+# 🚨 [V27.10 그랜드 수술] 에스크로 캐시 영구 박제(Ghost Escrow 방어), 액면분할 수학적 반올림(Banker's Rounding) 오류 교정 및 fsync 무결성 확보
+# 🚨 [V27.11 핫픽스] I/O FD 누수 방어, TOCTOU 경쟁 상태 원천 차단 래퍼 추가
 # ==========================================================
 import json
 import os
@@ -16,6 +19,13 @@ import time
 import shutil
 import tempfile
 import pandas_market_calendars as mcal
+
+# NEW: 다중 스레드/프로세스 환경에서 락 및 에스크로 동기화 제어를 위한 모듈 임포트
+import threading
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 try:
     from trading_bot.version_history import VERSION_HISTORY
@@ -48,13 +58,35 @@ class ConfigManager:
         self.DEFAULT_SEED = {"SOXL": 6720.0, "TQQQ": 6720.0}
         self.DEFAULT_SPLIT = {"SOXL": 40.0, "TQQQ": 40.0}
         self.DEFAULT_TARGET = {"SOXL": 12.0, "TQQQ": 10.0}
-        self.DEFAULT_COMPOUND = {"SOXL": 70.0, "TQQQ": 70.0}
         self.DEFAULT_VERSION = {"SOXL": "V14", "TQQQ": "V14"}
+        self.DEFAULT_COMPOUND = {"SOXL": 70.0, "TQQQ": 70.0}
         
         self.DEFAULT_SNIPER_MULTIPLIER = {"SOXL": 1.0, "TQQQ": 0.9}
         
-        # NEW: [V25.19 핫픽스] 에스크로 고속 인메모리 캐시 신설
         self._escrow_cache = {}
+
+        # NEW: 다중 스레드 간 상태 경합(TOCTOU)을 방어하기 위한 인메모리 프로세스 락
+        self._locks_mutex = threading.Lock()
+
+    # NEW: 장부 및 LOCKS 파일 갱신 시 원자적 읽기-수정-쓰기(RMW)를 보장하는 래퍼 함수
+    def _atomic_update_locks(self, update_fn):
+        with self._locks_mutex:
+            lock_file_path = self.FILES["LOCKS"]
+            dir_name = os.path.dirname(lock_file_path) or '.'
+            if not os.path.exists(dir_name):
+                os.makedirs(dir_name, exist_ok=True)
+                
+            sentinel = lock_file_path + ".lock"
+            with open(sentinel, 'w') as lf:
+                if fcntl:
+                    fcntl.flock(lf, fcntl.LOCK_EX)
+                try:
+                    locks = self._load_json(lock_file_path, {})
+                    update_fn(locks)
+                    self._save_json(lock_file_path, locks)
+                finally:
+                    if fcntl:
+                        fcntl.flock(lf, fcntl.LOCK_UN)
 
     def _load_json(self, filename, default=None):
         if os.path.exists(filename):
@@ -70,26 +102,32 @@ class ConfigManager:
                 return default if default is not None else {}
         return default if default is not None else {}
 
+    # MODIFIED: FD 누수 방어(EMFILE 충돌 차단) 및 mkstemp 경로(dir="") 에러 방어
     def _save_json(self, filename, data):
+        fd = None
+        temp_path = None
         try:
-            dir_name = os.path.dirname(filename)
-            if dir_name and not os.path.exists(dir_name):
+            dir_name = os.path.dirname(filename) or '.'
+            if not os.path.exists(dir_name):
                 os.makedirs(dir_name, exist_ok=True)
                 
             fd, temp_path = tempfile.mkstemp(dir=dir_name, text=True)
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                fd = None  # os.fdopen이 fd의 소유권을 획득했으므로 직접 닫기 방지
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 f.flush()         
-                os.fsync(fd)      
+                os.fsync(f.fileno()) 
                 
             os.replace(temp_path, filename)
+            temp_path = None
         except Exception as e:
             print(f"❌ [Config] JSON 저장 중 치명적 에러 발생 ({filename}): {e}")
-            if 'temp_path' in locals() and os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+            if fd is not None:
+                try: os.close(fd)
+                except OSError: pass
+            if temp_path and os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except Exception: pass
 
     def _load_file(self, filename, default=None):
         if os.path.exists(filename):
@@ -100,20 +138,31 @@ class ConfigManager:
                 print(f"⚠️ [Config] 파일 로드 에러 ({filename}): {e}")
         return default
 
+    # MODIFIED: FD 누수 방어 및 mkstemp 경로 에러 방어 적용
     def _save_file(self, filename, content):
+        fd = None
+        temp_path = None
         try:
-            dir_name = os.path.dirname(filename)
-            if dir_name and not os.path.exists(dir_name):
+            dir_name = os.path.dirname(filename) or '.'
+            if not os.path.exists(dir_name):
                 os.makedirs(dir_name, exist_ok=True)
                 
             fd, temp_path = tempfile.mkstemp(dir=dir_name, text=True)
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                fd = None
                 f.write(str(content))
                 f.flush()
-                os.fsync(fd)
+                os.fsync(f.fileno()) 
             os.replace(temp_path, filename)
+            temp_path = None
         except Exception as e:
             print(f"❌ [Config] 텍스트 파일 저장 에러 ({filename}): {e}")
+            if fd is not None:
+                try: os.close(fd)
+                except OSError: pass
+            if temp_path and os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except Exception: pass
 
     def get_last_split_date(self, ticker):
         return self._load_json(self.FILES["SPLIT_HISTORY"], {}).get(ticker, "")
@@ -127,7 +176,12 @@ class ConfigManager:
         return self._load_json(self.FILES["LEDGER"], [])
 
     def get_escrow_cash(self, ticker):
-        # 💡 우선 장부를 역산하여 에스크로를 도출하되, V25.19 인메모리 캐시도 함께 참조
+        locks = self._load_json(self.FILES["LOCKS"], {})
+        persistent_escrow = locks.get(f"ESCROW_{ticker}", None)
+        
+        if persistent_escrow is not None:
+            return max(0.0, float(persistent_escrow))
+
         ledger = self.get_ledger()
         escrow = 0.0
         for r in reversed(ledger):
@@ -139,37 +193,28 @@ class ConfigManager:
                         escrow -= (r['qty'] * r['price'])
                 else:
                     break
-                    
-        # 💡 장부 역산값이 0일 경우, 런타임에 set된 캐시값을 폴백으로 사용
-        calc_escrow = max(0.0, float(escrow))
-        if calc_escrow == 0.0:
-            calc_escrow = self._escrow_cache.get(ticker, 0.0)
-            
-        return calc_escrow
+        return max(0.0, float(escrow))
 
-    # MODIFIED: [V25.19 핫픽스] pass 찌꺼기 소각 및 에스크로 세터 완벽 구현
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼(_atomic_update_locks) 적용
     def set_escrow_cash(self, ticker, amount):
-        if not hasattr(self, '_escrow_cache'):
-            self._escrow_cache = {}
-        self._escrow_cache[ticker] = max(0.0, float(amount))
+        validated = max(0.0, float(amount))
+        def _update(locks):
+            locks[f"ESCROW_{ticker}"] = validated
+        self._atomic_update_locks(_update)
 
-    # MODIFIED: [V25.19 핫픽스] pass 찌꺼기 소각 및 에스크로 증감 완벽 구현
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼 적용
     def add_escrow_cash(self, ticker, amount):
-        if not hasattr(self, '_escrow_cache'):
-            self._escrow_cache = {}
-        current = self._escrow_cache.get(ticker, 0.0)
-        self._escrow_cache[ticker] = max(0.0, current + float(amount))
+        def _update(locks):
+            current = locks.get(f"ESCROW_{ticker}", 0.0)
+            locks[f"ESCROW_{ticker}"] = max(0.0, current + float(amount))
+        self._atomic_update_locks(_update)
 
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼 적용
     def clear_escrow_cash(self, ticker):
-        # 1. 파일 기반 Lock 해제
-        locks = self._load_json(self.FILES["LOCKS"], {})
-        if f"ESCROW_{ticker}" in locks:
-            del locks[f"ESCROW_{ticker}"]
-            self._save_json(self.FILES["LOCKS"], locks)
-            
-        # 2. 인메모리 캐시 100% 소각
-        if hasattr(self, '_escrow_cache') and ticker in self._escrow_cache:
-            self._escrow_cache[ticker] = 0.0
+        def _update(locks):
+            if f"ESCROW_{ticker}" in locks:
+                del locks[f"ESCROW_{ticker}"]
+        self._atomic_update_locks(_update)
 
     def get_total_locked_cash(self, exclude_ticker=None):
         total = 0.0
@@ -188,14 +233,48 @@ class ConfigManager:
         locks = self._load_json(self.FILES["LOCKS"], {})
         return locks.get(f"ORDER_LOCKED_{ticker}", False)
 
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼 적용
     def set_order_locked(self, ticker, is_locked):
+        def _update(locks):
+            if is_locked:
+                locks[f"ORDER_LOCKED_{ticker}"] = True
+            else:
+                if f"ORDER_LOCKED_{ticker}" in locks:
+                    del locks[f"ORDER_LOCKED_{ticker}"]
+        self._atomic_update_locks(_update)
+
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼 적용
+    def set_lock(self, ticker, market_type):
+        est = pytz.timezone('US/Eastern')
+        today = datetime.datetime.now(est).strftime('%Y-%m-%d')
+        def _update(locks):
+            locks[f"{today}_{ticker}_{market_type}"] = True
+        self._atomic_update_locks(_update)
+
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼 적용
+    def reset_locks(self):
+        def _update(locks):
+            keys_to_keep = [k for k in locks.keys() if k.startswith("ESCROW_") or k.startswith("ORDER_LOCKED_")]
+            surviving_locks = {k: locks[k] for k in keys_to_keep}
+            locks.clear()
+            locks.update(surviving_locks)
+        self._atomic_update_locks(_update)
+        
+    # MODIFIED: TOCTOU 경합 방어를 위해 원자적 업데이트 래퍼 적용
+    def reset_lock_for_ticker(self, ticker):
+        est = pytz.timezone('US/Eastern')
+        today = datetime.datetime.now(est).strftime('%Y-%m-%d')
+        def _update(locks):
+            keys_to_delete = [k for k in locks.keys() if k.startswith(f"{today}_{ticker}")]
+            for k in keys_to_delete:
+                del locks[k]
+        self._atomic_update_locks(_update)
+
+    def check_lock(self, ticker, market_type):
+        est = pytz.timezone('US/Eastern')
+        today = datetime.datetime.now(est).strftime('%Y-%m-%d')
         locks = self._load_json(self.FILES["LOCKS"], {})
-        if is_locked:
-            locks[f"ORDER_LOCKED_{ticker}"] = True
-        else:
-            if f"ORDER_LOCKED_{ticker}" in locks:
-                del locks[f"ORDER_LOCKED_{ticker}"]
-        self._save_json(self.FILES["LOCKS"], locks)
+        return locks.get(f"{today}_{ticker}_{market_type}", False)
 
     def get_absolute_t_val(self, ticker, actual_qty, actual_avg_price):
         seed = self.get_seed(ticker)
@@ -203,14 +282,15 @@ class ConfigManager:
         one_portion = seed / split if split > 0 else 1
         t_val = (actual_qty * actual_avg_price) / one_portion if one_portion > 0 else 0.0
         return round(t_val, 4), one_portion
-
     def apply_stock_split(self, ticker, ratio):
         if ratio <= 0: return
         ledger = self.get_ledger()
         changed = False
         for r in ledger:
             if r.get('ticker') == ticker:
-                new_qty = round(r['qty'] * ratio)
+                # 🚨 [수술 완료] Banker's Rounding 소수점 증발 오류 교정 (사사오입 강제 적용)
+                raw_new_qty = r['qty'] * ratio
+                new_qty = math.floor(raw_new_qty + 0.5)
                 r['qty'] = new_qty if new_qty > 0 else (1 if r['qty'] > 0 else 0)
                 r['price'] = round(r['price'] / ratio, 4)
                 if 'avg_price' in r:
@@ -358,20 +438,31 @@ class ConfigManager:
         self.set_reverse_state(ticker, False, 0, 0.0)
         self.clear_escrow_cash(ticker)
 
-    # MODIFIED: [V25.19 핫픽스] 빈 장부 스캔 시 IndexError 런타임 붕괴 방어막 완벽 이식
+    # MODIFIED: 잔여 물량의 정확한 평단가(Running weighted-average) 산출을 위해 단순 전체 매수합산 역산 폴백 로직 교체
     def calculate_holdings(self, ticker, records=None):
         if records is None:
             records = self.get_ledger()
         target_recs = [r for r in records if r['ticker'] == ticker]
         total_qty, total_invested, total_sold = 0, 0.0, 0.0    
         
+        # NEW: 순차적 차감 평단가(Running Cost) 추적 변수
+        running_qty = 0
+        running_cost = 0.0
+
         for r in target_recs:
             if r['side'] == 'BUY':
                 total_qty += r['qty']
                 total_invested += (r['price'] * r['qty'])
+                running_qty += r['qty']
+                running_cost += (r['price'] * r['qty'])
             elif r['side'] == 'SELL':
                 total_qty -= r['qty']
                 total_sold += (r['price'] * r['qty'])
+                if running_qty > 0:
+                    # 익절된 수량만큼 현재 평단가 비율에 따라 비용 풀에서 차감
+                    cost_per_share = running_cost / running_qty
+                    running_cost -= cost_per_share * min(r['qty'], running_qty)
+                    running_qty = max(0, running_qty - r['qty'])
         
         total_qty = max(0, int(total_qty))
         invested_up = math.ceil(total_invested * 100) / 100.0
@@ -381,10 +472,8 @@ class ConfigManager:
         if total_qty > 0 and target_recs:
             avg_price = float(target_recs[-1].get('avg_price', 0.0))
             if avg_price == 0.0:
-                buy_sum = sum(r['price']*r['qty'] for r in target_recs if r['side']=='BUY')
-                buy_qty = sum(r['qty'] for r in target_recs if r['side']=='BUY')
-                if buy_qty > 0:
-                    avg_price = buy_sum / buy_qty
+                # MODIFIED: 전체 매수 평단가가 아닌 잔여 물량 기준 평단가 반영
+                avg_price = (running_cost / running_qty) if running_qty > 0 else 0.0
         
         return total_qty, avg_price, invested_up, sold_up
 
@@ -401,7 +490,6 @@ class ConfigManager:
         d[ticker] = {"is_active": is_active, "day_count": day_count, "exit_target": exit_target, "last_update_date": last_update_date}
         self._save_json(self.FILES["REVERSE_CFG"], d)
 
-    # MODIFIED: [V25.19 핫픽스] 불필요한 관찰자 효과를 유발하던 데드코드 소각 (스케줄러 통제로 바이패스)
     def update_reverse_day_if_needed(self, ticker):
         pass
 
@@ -480,6 +568,7 @@ class ConfigManager:
             
         return max(0.0, round(t_val, 4)), max(0.0, current_budget), max(0.0, rem_cash)
 
+    # MODIFIED: 가상 매도 레코드 삽입 이전에 확정된 실현 수익(PnL)을 선 계산하여 영구 박제되는 런타임 오류 방어
     def archive_graduation(self, ticker, end_date, prev_close=0.0):
         ledger = self.get_ledger()
         target_recs = [r for r in ledger if r['ticker'] == ticker]
@@ -488,6 +577,10 @@ class ConfigManager:
         
         ledger_qty, avg_price, _, _ = self.calculate_holdings(ticker, target_recs)
         
+        # NEW: 합성 레코드 삽입 전 원장 기반 순수 손익 스냅샷 획득
+        raw_total_buy = sum(r['price']*r['qty'] for r in target_recs if r['side']=='BUY')
+        raw_total_sell = sum(r['price']*r['qty'] for r in target_recs if r['side']=='SELL')
+
         if ledger_qty > 0:
             split = self.get_split_count(ticker)
             is_reverse = self.get_reverse_state(ticker).get("is_active", False)
@@ -522,11 +615,12 @@ class ConfigManager:
 
             self._save_json(self.FILES["LEDGER"], ledger)
 
-        total_buy = math.ceil(sum(r['price']*r['qty'] for r in target_recs if r['side']=='BUY') * 100) / 100.0
-        total_sell = math.ceil(sum(r['price']*r['qty'] for r in target_recs if r['side']=='SELL') * 100) / 100.0
+        # MODIFIED: 위에서 캐싱한 raw_total 스냅샷을 활용하여 PnL 연산
+        net_invested = raw_total_buy * 1.0025
+        net_revenue = raw_total_sell * 0.9975
         
-        profit = math.ceil((total_sell - total_buy) * 100) / 100.0
-        yield_pct = math.ceil(((profit / total_buy * 100) if total_buy > 0 else 0.0) * 100) / 100.0
+        profit = math.ceil((net_revenue - net_invested) * 100) / 100.0
+        yield_pct = math.ceil(((profit / net_invested * 100) if net_invested > 0 else 0.0) * 100) / 100.0
         
         compound_rate = self.get_compound_rate(ticker) / 100.0
         added_seed = 0
@@ -538,7 +632,7 @@ class ConfigManager:
         history = self._load_json(self.FILES["HISTORY"], [])
         new_hist = {
             "id": len(history) + 1, "ticker": ticker, "end_date": end_date,
-            "profit": profit, "yield": yield_pct, "revenue": total_sell, "invested": total_buy, "trades": target_recs
+            "profit": profit, "yield": yield_pct, "revenue": net_revenue, "invested": net_invested, "trades": target_recs
         }
         history.append(new_hist)
         self._save_json(self.FILES["HISTORY"], history)
@@ -566,64 +660,26 @@ class ConfigManager:
     def get_history(self):
         return self._load_json(self.FILES["HISTORY"], [])
 
-    def check_lock(self, ticker, market_type):
-        est = pytz.timezone('US/Eastern')
-        today = datetime.datetime.now(est).strftime('%Y-%m-%d')
-        locks = self._load_json(self.FILES["LOCKS"], {})
-        return locks.get(f"{today}_{ticker}_{market_type}", False)
-
-    def set_lock(self, ticker, market_type):
-        est = pytz.timezone('US/Eastern')
-        today = datetime.datetime.now(est).strftime('%Y-%m-%d')
-        locks = self._load_json(self.FILES["LOCKS"], {})
-        locks[f"{today}_{ticker}_{market_type}"] = True
-        self._save_json(self.FILES["LOCKS"], locks)
-
-    def reset_locks(self):
-        locks = self._load_json(self.FILES["LOCKS"], {})
-        surviving_locks = {k: v for k, v in locks.items() if k.startswith("ESCROW_") or k.startswith("ORDER_LOCKED_")}
-        self._save_json(self.FILES["LOCKS"], surviving_locks)
-        
-    def reset_lock_for_ticker(self, ticker):
-        est = pytz.timezone('US/Eastern')
-        today = datetime.datetime.now(est).strftime('%Y-%m-%d')
-        locks = self._load_json(self.FILES["LOCKS"], {})
-        
-        keys_to_delete = [k for k in locks.keys() if k.startswith(f"{today}_{ticker}")]
-        if keys_to_delete:
-            for k in keys_to_delete:
-                del locks[k]
-            self._save_json(self.FILES["LOCKS"], locks)
-    
-    def get_seed(self, t):
-        return float(self._load_json(self.FILES["SEED_CFG"], self.DEFAULT_SEED).get(t, 6720.0))
-
+    def get_seed(self, t): return float(self._load_json(self.FILES["SEED_CFG"], self.DEFAULT_SEED).get(t, 6720.0))
     def set_seed(self, t, v): 
         d = self._load_json(self.FILES["SEED_CFG"], self.DEFAULT_SEED)
         d[t] = v
         self._save_json(self.FILES["SEED_CFG"], d)
 
-    def get_compound_rate(self, t):
-        return float(self._load_json(self.FILES["COMPOUND_CFG"], self.DEFAULT_COMPOUND).get(t, 70.0))
-
+    def get_compound_rate(self, t): return float(self._load_json(self.FILES["COMPOUND_CFG"], self.DEFAULT_COMPOUND).get(t, 70.0))
     def set_compound_rate(self, t, v):
         d = self._load_json(self.FILES["COMPOUND_CFG"], self.DEFAULT_COMPOUND)
         d[t] = v
         self._save_json(self.FILES["COMPOUND_CFG"], d)
 
-    def get_version(self, t):
-        return self._load_json(self.FILES["VERSION_CFG"], self.DEFAULT_VERSION).get(t, "V14")
-
+    def get_version(self, t): return self._load_json(self.FILES["VERSION_CFG"], self.DEFAULT_VERSION).get(t, "V14")
     def set_version(self, t, v):
         d = self._load_json(self.FILES["VERSION_CFG"], self.DEFAULT_VERSION)
         d[t] = v
         self._save_json(self.FILES["VERSION_CFG"], d)
 
-    def get_split_count(self, t):
-        return self._load_json(self.FILES["SPLIT"], self.DEFAULT_SPLIT).get(t, 40.0)
-
-    def get_target_profit(self, t):
-        return self._load_json(self.FILES["PROFIT_CFG"], self.DEFAULT_TARGET).get(t, 10.0)
+    def get_split_count(self, t): return self._load_json(self.FILES["SPLIT"], self.DEFAULT_SPLIT).get(t, 40.0)
+    def get_target_profit(self, t): return self._load_json(self.FILES["PROFIT_CFG"], self.DEFAULT_TARGET).get(t, 10.0)
         
     def get_sniper_multiplier(self, t):
         default_val = self.DEFAULT_SNIPER_MULTIPLIER.get(t, 1.0)
@@ -634,48 +690,29 @@ class ConfigManager:
         d[t] = float(v)
         self._save_json(self.FILES["SNIPER_MULTIPLIER_CFG"], d)
 
-    def get_upward_sniper_mode(self, ticker):
-        d = self._load_json(self.FILES["UPWARD_SNIPER"], {})
-        return d.get(ticker, False)
-
+    def get_upward_sniper_mode(self, ticker): return self._load_json(self.FILES["UPWARD_SNIPER"], {}).get(ticker, False)
     def set_upward_sniper_mode(self, ticker, v):
         d = self._load_json(self.FILES["UPWARD_SNIPER"], {})
         d[ticker] = bool(v)
         self._save_json(self.FILES["UPWARD_SNIPER"], d)
 
-    def get_avwap_hybrid_mode(self, ticker):
-        d = self._load_json(self.FILES["AVWAP_HYBRID_CFG"], {})
-        return d.get(ticker, False)
-
+    def get_avwap_hybrid_mode(self, ticker): return self._load_json(self.FILES["AVWAP_HYBRID_CFG"], {}).get(ticker, False)
     def set_avwap_hybrid_mode(self, ticker, v):
         d = self._load_json(self.FILES["AVWAP_HYBRID_CFG"], {})
         d[ticker] = bool(v)
         self._save_json(self.FILES["AVWAP_HYBRID_CFG"], d)
 
-    def get_manual_vwap_mode(self, ticker):
-        d = self._load_json(self.FILES["MANUAL_VWAP_CFG"], {})
-        return d.get(ticker, False)
-
+    def get_manual_vwap_mode(self, ticker): return self._load_json(self.FILES["MANUAL_VWAP_CFG"], {}).get(ticker, False)
     def set_manual_vwap_mode(self, ticker, v):
         d = self._load_json(self.FILES["MANUAL_VWAP_CFG"], {})
         d[ticker] = bool(v)
         self._save_json(self.FILES["MANUAL_VWAP_CFG"], d)
 
-    def get_secret_mode(self):
-        return self._load_file(self.FILES["SECRET_MODE"]) == 'True'
-
-    def set_secret_mode(self, v):
-        self._save_file(self.FILES["SECRET_MODE"], str(v))
-
-    def get_active_tickers(self):
-        return self._load_json(self.FILES["TICKER"], ["SOXL", "TQQQ"])
-
-    def set_active_tickers(self, v):
-        self._save_json(self.FILES["TICKER"], v)
-
+    def get_secret_mode(self): return self._load_file(self.FILES["SECRET_MODE"]) == 'True'
+    def set_secret_mode(self, v): self._save_file(self.FILES["SECRET_MODE"], str(v))
+    def get_active_tickers(self): return self._load_json(self.FILES["TICKER"], ["SOXL", "TQQQ"])
+    def set_active_tickers(self, v): self._save_json(self.FILES["TICKER"], v)
     def get_chat_id(self): 
         v = self._load_file(self.FILES["CHAT_ID"])
         return int(v) if v else None
-
-    def set_chat_id(self, v):
-        self._save_file(self.FILES["CHAT_ID"], v)
+    def set_chat_id(self, v): self._save_file(self.FILES["CHAT_ID"], v)
