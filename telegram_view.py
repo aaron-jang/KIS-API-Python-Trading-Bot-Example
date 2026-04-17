@@ -20,12 +20,12 @@
 # 🚨 [V27.01 UI 팩트 교정] 휴먼 에러 방지를 위한 /update 명령어 최하단 격리 렌더링 적용
 # 🚨 [V27.16 그랜드 수술] 코파일럿 합작 - KeyError 런타임 즉사 방어(Safe Get), FileNotFoundError 졸업카드 증발 차단, 외화 RP 이중 계산 환각 UI 제거 및 유령 지층(None Date) 통제망 구축 완료
 # 🚀 [V27.24 그랜드 수술] 도파민 폭발! GIF 애니메이션 렌더링을 위한 멀티 프레임 스티칭(Stitching) 코어 및 Fallback 엔진 탑재 완료
+# 🚨 [V27.25 UI 팩트 교정] 시작화면(/start) 스케줄러 타임라인 08:30 -> 10:00 KST 확정 정산 시간으로 시각적 동기화 완료
 # ==========================================================
 import os
 import math
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-# 🚨 [수술 완료] 움짤 분해/압축을 위한 ImageSequence 팩트 주입
 from PIL import Image, ImageDraw, ImageFont, ImageSequence
 
 class TelegramView:
@@ -77,7 +77,8 @@ class TelegramView:
         
         msg += f"🕒 [ 운영 스케줄 ({dst_state}) ]\n"
         msg += "🔹 6시간 간격 : 🔑 API 토큰 자동 갱신\n"
-        msg += "🔹 08:30 : 📝 잔고 동기화 & 자동 복리\n"
+        # 🚨 [V27.25 팩트 교정] 08:30 가결제 스캔을 10:00 확정 정산 스캔 텍스트로 동기화 완료
+        msg += "🔹 10:00 : 📝 확정 정산 스캔 & 졸업 발급\n"
         msg += f"🔹 {target_hour}:00 : 🔐 매매 초기화 및 변동성 락온\n"
         msg += f"🔹 {target_hour}:05 : 🌃 통합 주문 자동 실행\n\n"
         
@@ -659,7 +660,6 @@ class TelegramView:
 
         return msg, InlineKeyboardMarkup(keyboard)
 
-    # 🚨 [수술 완료] 움짤(GIF) 프레임 단위 스티칭 렌더러 이식
     def create_profit_image(self, ticker, profit, yield_pct, invested, revenue, end_date):
         W, H = 600, 920 
         IMG_H = 430 

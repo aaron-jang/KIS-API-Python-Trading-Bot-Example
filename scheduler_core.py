@@ -1,13 +1,13 @@
 # ==========================================================
-# [scheduler_core.py] - 🌟 100% 통합 완성본 (V27.21) 🌟
+# [scheduler_core.py] - 🌟 100% 통합 완성본 (V27.24) 🌟
 # ⚠️ 이 주석 및 파일명 표기는 절대 지우지 마세요.
 # 💡 [V24.09 패치] API 결측치(None) 방어용 Safe Casting 전면 이식 완료
 # 💡 [V24.10 수술] V_REV 동적 에스크로 차감 방어 (이중 차감 방지)
 # 🚨 [V25.02 수술] 리버스 모드 일일 1회 확정 탈출 엔진 팩트 이식
 # 🚨 [V27.12 그랜드 수술] 코파일럿 합작 - 리버스 하드스탑 부등호 논리 완벽 교정
 # 🚨 [V27.13 그랜드 수술] 이벤트 루프 교착 방어 및 math.floor 평단가 왜곡 교정 완료
-# 🚀 [V27.20 파이어게이트식 이식] 아침 09:01 확정 정산 졸업 카드 자동 출력 엔진 탑재
 # 🚨 [V27.21 그랜드 수술] 5분 정산 윈도우 확장, TOCTOU 락온, 일반 종목 예산 누수 방어, Fail-Open 차단 및 Orphan 주문 초기화 보류(Skip) 이식 완비
+# 🚀 [V27.24 그랜드 수술] 타임 패러독스 원천 차단! 08:30 동기화를 10:00 KST 확정 정산 시간으로 자동 시프트(Shift)하는 스마트 딜레이 엔진 탑재
 # ==========================================================
 import os
 import logging
@@ -42,7 +42,6 @@ def is_market_open():
         else:
             return False
     except Exception as e:
-        # MODIFIED: [Fail-Open 붕괴 방어] 라이브러리 에러 시 휴장일에 강제 매매되는 치명타를 막기 위해 보수적 휴장(False) 처리
         logging.error(f"⚠️ 달력 라이브러리 에러 발생. 안전을 위해 강제 휴장 처리합니다: {e}")
         return False
 
@@ -80,7 +79,6 @@ def get_budget_allocation(cash, tickers, cfg):
             seed = float(cfg.get_seed(tx) or 0.0)
             portion = seed / split if split > 0 else 0.0
             
-            # MODIFIED: [예산 중복 산출(Escrow Leak) 차단] 정방향 종목이 리버스 에스크로 자금(other_locked)을 끌어다 쓰는 초과 매수 맹점 소각
             if free_cash >= portion:
                 allocated[tx] = free_cash
                 free_cash -= portion
@@ -90,7 +88,6 @@ def get_budget_allocation(cash, tickers, cfg):
     return sorted_tickers, allocated
 
 def get_actual_execution_price(execs, target_qty, side_cd):
-    # MODIFIED: [0주 타겟 ZeroDivision 방어] target_qty가 0 이하일 경우 루프 진입 전 0.0 반환
     if not execs or target_qty <= 0: return 0.0
     
     execs.sort(key=lambda x: str(x.get('ord_tmd') or '000000'), reverse=True)
@@ -152,51 +149,6 @@ async def scheduled_token_check(context):
     logging.info("🔑 [API 토큰 갱신] 토큰 갱신이 안전하게 완료되었습니다.")
 
 # ==========================================================
-# 🚀 아침 확정 정산 졸업 카드 자동화 스케줄러 (파이어게이트식 지연 정산)
-# ==========================================================
-async def scheduled_graduation_report(context):
-    kst = pytz.timezone('Asia/Seoul')
-    now = datetime.datetime.now(kst)
-    
-    # MODIFIED: [스케줄러 Time Drift 방어] 서버 지연을 고려해 09:01 ~ 09:05(5분) 넓은 윈도우 허용
-    if not (now.hour == 10 and 1 <= now.minute <= 5):
-        return
-
-    app_data = context.job.data
-    bot, cfg, broker, tx_lock = app_data['bot'], app_data['cfg'], app_data['broker'], app_data['tx_lock']
-    chat_id = context.job.chat_id
-
-    try:
-        # MODIFIED: [TOCTOU 레이스 조건 차단] 계좌 조회부터 카드 렌더링 및 장부 삭제까지 전 과정을 원자적(Atomic) 락온 보호
-        async with tx_lock:
-            _, holdings = await asyncio.to_thread(broker.get_account_balance)
-        
-            if holdings is None: return
-
-            for t in cfg.get_active_tickers():
-                h_data = holdings.get(t) or {}
-                qty = int(float(h_data.get('qty') or 0))
-                
-                ledger = cfg.get_ledger_by_ticker(t)
-                if qty == 0 and ledger:
-                    logging.info(f"🎓 [{t}] 아침 확정 정산 스캔 시작...")
-                    
-                    settled_pnl = await asyncio.to_thread(broker.get_realized_profit, t)
-                    
-                    if settled_pnl:
-                        await bot.process_graduation(
-                            ticker=t, 
-                            chat_id=chat_id, 
-                            context=context, 
-                            settled_data=settled_pnl, 
-                            auto_mode=True
-                        )
-                        logging.info(f"🏆 [{t}] 아침 확정 졸업 카드 자동 출력 완료")
-
-    except Exception as e:
-        logging.error(f"🚨 [scheduled_graduation_report] 에러: {e}")
-
-# ==========================================================
 # 🚨 리버스 모드 절대 하드스탑(TQQQ -15% / SOXL -20%) 확정 탈출 엔진
 # ==========================================================
 
@@ -253,7 +205,6 @@ async def scheduled_force_reset(context):
                         continue
                     
                     if curr_ret <= exit_threshold:
-                        # MODIFIED: [Orphan 주문 초기화 보류] 하드스탑 발동 시 증권사 주문 취소가 실패하면 상태 초기화를 보류(Skip)하여 봇이 잔여 물량을 잊어버리는 치명타 방어
                         try:
                             cancelled = await asyncio.to_thread(broker.cancel_all_orders, t)
                             await asyncio.sleep(1.0)
@@ -275,7 +226,7 @@ async def scheduled_force_reset(context):
                         if changed:
                             cfg._save_json(cfg.FILES["LEDGER"], ledger_data)
                             
-                        msg_addons += f"\n🚨 <b>[{t}] 하드스탑 확정 탈출 발동 (수익률: {curr_ret:.2f}% <= 기준: {exit_threshold}%)!</b>\n▫️ 격리 병동을 즉시 폐쇄하고 V14 본대로 완벽히 복귀했습니다."
+                        msg_addons += f"\n🚨 <b>[{t}] 하드스탑 확정 탈출 발동 (수익률: {curr_ret:.2f}% <= 기준: {exit_threshold}%)!</b>\n▫️ 격리 병동을 즉시 폐쇄하고 V14 본대로 완벽히 복 복귀했습니다."
                     else:
                         cfg.increment_reverse_day(t)
                 else:
@@ -287,18 +238,49 @@ async def scheduled_force_reset(context):
     except Exception as e:
         await context.bot.send_message(chat_id=context.job.chat_id, text=f"🚨 <b>시스템 초기화 중 에러 발생:</b> {e}", parse_mode='HTML')
 
+# ==========================================================
+# 🚀 [V27.24] 스마트 딜레이 엔진: 모든 아침 정산을 KIS 배치 완료 시점인 10:00 KST로 강제 시프트
+# ==========================================================
+
+async def delayed_auto_sync(context):
+    """10:00 KST에 최종 격발되는 실질적 정산 엔진"""
+    await run_auto_sync(context, "10:00")
+
 async def scheduled_auto_sync_summer(context):
     if not is_dst_active(): return 
-    await run_auto_sync(context, "08:30")
+    
+    kst = pytz.timezone('Asia/Seoul')
+    now = datetime.datetime.now(kst)
+    
+    # 🚨 10시 이전(08:30)에 깨어났다면, 10시 정각에 다시 일어나도록 알람(Snooze)을 맞추고 수면
+    if now.hour < 10:
+        target_time = now.replace(hour=10, minute=0, second=0, microsecond=0)
+        delay = (target_time - now).total_seconds()
+        context.job_queue.run_once(delayed_auto_sync, delay, data=context.job.data, chat_id=context.job.chat_id)
+        logging.info(f"⏳ [정산 지연 엔진 가동] 100% 확정 결제 데이터 스캔을 위해 동기화 스케줄을 10:00로 시프트합니다. ({delay}초 뒤 격발)")
+        return
+        
+    await run_auto_sync(context, "10:00")
 
 async def scheduled_auto_sync_winter(context):
     if is_dst_active(): return 
-    await run_auto_sync(context, "09:30")
+    
+    kst = pytz.timezone('Asia/Seoul')
+    now = datetime.datetime.now(kst)
+    
+    if now.hour < 10:
+        target_time = now.replace(hour=10, minute=0, second=0, microsecond=0)
+        delay = (target_time - now).total_seconds()
+        context.job_queue.run_once(delayed_auto_sync, delay, data=context.job.data, chat_id=context.job.chat_id)
+        logging.info(f"⏳ [정산 지연 엔진 가동] 100% 확정 결제 데이터 스캔을 위해 동기화 스케줄을 10:00로 시프트합니다. ({delay}초 뒤 격발)")
+        return
+        
+    await run_auto_sync(context, "10:00")
 
 async def run_auto_sync(context, time_str):
     chat_id = context.job.chat_id
     bot = context.job.data['bot']
-    status_msg = await context.bot.send_message(chat_id=chat_id, text=f"📝 <b>[{time_str}] 장부 자동 동기화(무결성 검증)를 시작합니다.</b>", parse_mode='HTML')
+    status_msg = await context.bot.send_message(chat_id=chat_id, text=f"📝 <b>[{time_str}] 장부 자동 동기화 및 졸업 무결성 검증을 시작합니다.</b>", parse_mode='HTML')
     
     success_tickers = []
     for t in context.job.data['cfg'].get_active_tickers():
