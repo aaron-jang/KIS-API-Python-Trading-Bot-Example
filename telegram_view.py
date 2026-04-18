@@ -23,6 +23,7 @@
 # 🚨 [V27.25 UI 팩트 교정] 시작화면(/start) 스케줄러 타임라인 08:30 -> 10:00 KST 확정 정산 시간으로 시각적 동기화 완료
 # MODIFIED: [V28.04 개념 패치] 자동(자체 U-Curve 엔진)/수동(한투 알고리즘 위임) 모드 수수료 오해 텍스트 전면 교정 완료
 # MODIFIED: [V28.05 그랜드 수술] 거대 프랑켄슈타인 1층 생성(2700달러 손실) 원흉인 '물량 통이관(SET_INIT)' 버튼 및 하위 UI 전면 소각
+# MODIFIED: [V28.17 UX 팩트 패치] V-REV 모드 시 불필요한 분할/목표 설정 버튼 렌더링 은폐 (디커플링 확보)
 # ==========================================================
 import os
 import math
@@ -205,7 +206,8 @@ class TelegramView:
         msg = f"🚨 <b>[{ticker} 비상 수혈 최종 승인 대기]</b> 🚨\n\n"
         msg += f"가장 최근에 물린 로트(Lot) <b>{emergency_qty}주</b> (평단 <b>${emergency_price:.2f}</b>)를 KIS 서버로 즉각 시장가(MOC) 강제 매도 전송합니다.\n\n"
         msg += "⚠️ <b>포트폴리오 매니저 경고:</b>\n"
-        msg += "1. 이 작업은 즉각 격발되며 취소할 수 정규장/프리장 운영 시간에만 격발이 승인됩니다.\n"
+        msg += "1. 이 작업은 즉각 격발되며 취소할 수 없습니다.\n"
+        msg += "2. 정규장/프리장 운영 시간에만 격발이 승인됩니다.\n"
         msg += "3. 체결 즉시 해당 로트 기록은 큐(Queue)에서 영구 소각됩니다.\n"
         
         keyboard = [
@@ -533,11 +535,17 @@ class TelegramView:
                 
                 keyboard.append([InlineKeyboardButton(avwap_txt, callback_data=avwap_cb)])
             
-            row2 = [
-                InlineKeyboardButton(f"⚙️ {t} 분할", callback_data=f"INPUT:SPLIT:{t}"), 
-                InlineKeyboardButton(f"🎯 {t} 목표", callback_data=f"INPUT:TARGET:{t}"),
-                InlineKeyboardButton(f"💸 {t} 복리", callback_data=f"INPUT:COMPOUND:{t}")
-            ]
+            # MODIFIED: [V28.17] V-REV 모드 시 불필요한 분할/목표 설정 버튼 은폐 (UX 교정)
+            if ver == "V_REV":
+                row2 = [
+                    InlineKeyboardButton(f"💸 {t} 복리", callback_data=f"INPUT:COMPOUND:{t}")
+                ]
+            else:
+                row2 = [
+                    InlineKeyboardButton(f"⚙️ {t} 분할", callback_data=f"INPUT:SPLIT:{t}"), 
+                    InlineKeyboardButton(f"🎯 {t} 목표", callback_data=f"INPUT:TARGET:{t}"),
+                    InlineKeyboardButton(f"💸 {t} 복리", callback_data=f"INPUT:COMPOUND:{t}")
+                ]
             keyboard.append(row2)
             
             row3 = [
