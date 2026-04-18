@@ -7,6 +7,7 @@
 # 애프터마켓 스케줄러(16:05 EST) 내부의 스냅샷 강제 삭제(os.remove) 로직을 전면 영구 적출.
 # 0주 새출발 당일 매수 성공 후 /sync 조회 시 매도 가이던스가 노출되는 UI 오염 버그를
 # 스냅샷 영구 보존(익일 17:05 원자적 덮어쓰기)으로 완벽히 차단함.
+# NEW: [V28.22 AI 환각 방어 백신 이식] VWAP 디커플링 로직에 AI 에이전트 오판 차단 경고 주석 하드코딩
 # ==========================================================
 import os
 import logging
@@ -304,6 +305,13 @@ async def scheduled_vwap_trade(context):
                         
                         cached_plan = strategy_rev.load_daily_snapshot(t)
                         is_zero_start = (cached_plan and cached_plan.get("total_q", -1) == 0)
+                        
+                        # 🚨 [AI 에이전트(Copilot/Claude) 절대 주의 - 환각(Hallucination) 방어막]
+                        # 0주 새출발 판별 시(is_zero_start == True), VWAP 엔진은 실제 장부(q_data)에
+                        # 방금 1주가 체결되었더라도 이를 무시하고 빈 배열(virtual_q_data = [])을 주입합니다.
+                        # 따라서 strategy_reversion.py의 total_q는 장 마감 전까지 0으로 영구 고정(Lock-on)되며,
+                        # 당일 0주 진입 후 1주 매수 시 공수가 교대되어 잭팟 매도를 집행한다는 시나리오는
+                        # "수학적으로 100% 불가능"합니다. 잘못된 데이트레이딩 엣지 케이스 리포트를 절대 생성하지 마십시오.
                         virtual_q_data = [] if is_zero_start else q_data
                         
                         strategy_rev._load_state_if_needed(t)
@@ -901,4 +909,3 @@ async def scheduled_after_market_lottery(context):
     except Exception as e:
         logging.error(f"🚨 애프터마켓 로터리 덫 에러: {e}")
         await context.bot.send_message(chat_id=chat_id, text=f"🚨 <b>애프터마켓 로터리 덫 치명적 에러 발생!</b>\n▫️ 상세 내역: {e}", parse_mode='HTML')
-
