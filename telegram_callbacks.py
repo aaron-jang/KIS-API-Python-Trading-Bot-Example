@@ -5,6 +5,7 @@
 # V14 <-> V-REV 모드 전환 시 실잔고 '0주 락온(Lock-on)' 절대 방어막 이식 완료
 # MODIFIED: [V28.16 UX 팩트 패치] 0주 락온 발동 시 일회성 팝업(Alert) 무반응 맹점을 해체하고 
 # 옵션 A(직관성 최우선) 텍스트로 기존 화면을 덮어써서 영구 박제하는 렌더링 수술 완료
+# MODIFIED: [V28.18 UX 팩트 패치] 0주 락온 시 자기 자신의 모드(동일 모드) 서브메뉴(LOC/VWAP, AUTO/MANUAL) 진입까지 과잉 차단되던 엣지 케이스 완벽 해체 및 조건부 허용 렌더링 수술 완료
 # ==========================================================
 import logging
 import datetime
@@ -497,14 +498,15 @@ class TelegramCallbacks:
         elif action == "SET_VER":
             new_ver = sub
             ticker = data[2]
+            current_ver = self.cfg.get_version(ticker)
             
-            # 🚀 [0주 락온(Lock-on) 절대 방어막]
+            # 🚀 [0주 락온(Lock-on) 절대 방어막 - 동일 모드 내 서브메뉴 진입 허용]
             async with self.tx_lock:
                 _, holdings = self.broker.get_account_balance()
             qty = int(float(holdings.get(ticker, {}).get('qty', 0)))
             
-            if qty > 0:
-                # MODIFIED: [V28.16] 0주 락온 시각적 팩트 메시지(옵션A) 영구 박제 렌더링으로 교체 (묵음 현상 해결)
+            # MODIFIED: [V28.18] 현재 가동 중인 모드와 다른 모드로 전환하려고 할 때만 락온 차단
+            if qty > 0 and current_ver != new_ver:
                 msg = f"🚨 <b>[ 퀀트 모드 전환 강제 차단 ]</b>\n\n"
                 msg += f"현재 <b>[{ticker}] {qty}주</b>를 보유 중입니다.\n"
                 msg += "V14 ↔ V-REV 간의 엔진 스위칭은 장부 평단가 오염을 막기 위해 <b>'0주(100% 현금)'</b> 상태에서만 절대적으로 허용됩니다.\n\n"
@@ -537,14 +539,17 @@ class TelegramCallbacks:
         elif action == "SET_VER_CONFIRM":
             mode_type = sub 
             ticker = data[2]
+            current_ver = self.cfg.get_version(ticker)
+            
+            target_ver = "V_REV" if mode_type in ["AUTO", "MANUAL"] else "V14"
 
-            # 🚀 [0주 락온(Lock-on) 절대 방어막 교차 검증]
+            # 🚀 [0주 락온(Lock-on) 절대 방어막 교차 검증 - 동일 모드 내 서브메뉴 진입 허용]
             async with self.tx_lock:
                 _, holdings = self.broker.get_account_balance()
             qty = int(float(holdings.get(ticker, {}).get('qty', 0)))
             
-            if qty > 0:
-                # MODIFIED: [V28.16] 0주 락온 시각적 팩트 메시지(옵션A) 영구 박제 렌더링으로 교체 (묵음 현상 해결)
+            # MODIFIED: [V28.18] 현재 가동 중인 모드와 다른 모드로 전환하려고 할 때만 락온 차단
+            if qty > 0 and current_ver != target_ver:
                 msg = f"🚨 <b>[ 퀀트 모드 전환 강제 차단 ]</b>\n\n"
                 msg += f"현재 <b>[{ticker}] {qty}주</b>를 보유 중입니다.\n"
                 msg += "V14 ↔ V-REV 간의 엔진 스위칭은 장부 평단가 오염을 막기 위해 <b>'0주(100% 현금)'</b> 상태에서만 절대적으로 허용됩니다.\n\n"
