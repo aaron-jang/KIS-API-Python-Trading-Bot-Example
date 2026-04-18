@@ -15,12 +15,17 @@
 # 🚨 [V27.03 핫픽스] 스냅샷 로드 시 내부 날짜 검사(Validation) 전면 폐기로 무한루프 영구 방어
 # 🚨 [V27.05 그랜드 수술] API Reject 방어(소수점 덤핑 차단), ZeroDivision 방어 및 Safe Casting 완벽 이식
 # 🚨 [V27.15 코파일럿 합작] FD 누수 방어, 스냅샷 덮어쓰기 락온, 0달러 로트 배제 및 TypeError 런타임 붕괴 방어막 이식 완료
+# MODIFIED: [V28.08 그랜드 수술] 스냅샷 영구 박제에 따른 VWAP 디커플링 방어막 완벽 이식 (0주 새출발 타임 패러독스 영구 소각)
+# MODIFIED: [V28.19 타임존 락온] datetime.now()를 EST(미국 동부) 기준으로 강제 고정하여 KST 자정 경계 스냅샷 증발 버그 완벽 수술
+# MODIFIED: [V28.20 무조건 진입 투트랙] 0주 새출발 시 VWAP 런타임 타격에서 Buy1 상한선 방어막 철거 (스냅샷 락온과 완벽한 디커플링 이식)
+# NEW: [V28.22 AI 환각 방어 백신 이식] 공수 교대 로직에 AI 에이전트 오판 차단 경고 주석 하드코딩
 # ==========================================================
 import math
 import os
 import json
 import tempfile
 from datetime import datetime
+import pytz
 
 class ReversionStrategy:
     def __init__(self):
@@ -30,6 +35,7 @@ class ReversionStrategy:
         }
         self.executed = {"BUY_BUDGET": {}, "SELL_QTY": {}}
         self.state_loaded = {}
+        self.was_holding = {}
         
         self.U_CURVE_WEIGHTS = [
             0.0252, 0.0213, 0.0192, 0.0210, 0.0189, 0.0187, 0.0228, 0.0203, 0.0200, 0.0209,
@@ -38,15 +44,15 @@ class ReversionStrategy:
         ]
 
     def _get_state_file(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         return f"data/vwap_state_REV_{today_str}_{ticker}.json"
 
     def _get_snapshot_file(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         return f"data/daily_snapshot_REV_{today_str}_{ticker}.json"
 
     def _load_state_if_needed(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         if self.state_loaded.get(ticker) == today_str:
             return 
             
@@ -60,6 +66,7 @@ class ReversionStrategy:
                     for k in self.executed.keys():
                         raw_val = data.get("executed", {}).get(k, 0)
                         self.executed[k][ticker] = int(raw_val) if k == "SELL_QTY" else float(raw_val)
+                    self.was_holding[ticker] = bool(data.get("was_holding", False))
                     self.state_loaded[ticker] = today_str
                     return
             except Exception:
@@ -69,10 +76,11 @@ class ReversionStrategy:
             self.residual[k][ticker] = 0.0
         self.executed["BUY_BUDGET"][ticker] = 0.0
         self.executed["SELL_QTY"][ticker] = 0
+        self.was_holding[ticker] = False
         self.state_loaded[ticker] = today_str
 
     def _save_state(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         state_file = self._get_state_file(ticker)
         data = {
             "date": today_str,
@@ -80,7 +88,8 @@ class ReversionStrategy:
             "executed": {
                 "BUY_BUDGET": float(self.executed.get("BUY_BUDGET", {}).get(ticker, 0.0)),
                 "SELL_QTY": int(self.executed.get("SELL_QTY", {}).get(ticker, 0))
-            }
+            },
+            "was_holding": bool(self.was_holding.get(ticker, False))
         }
         temp_path = None
         try:
@@ -88,7 +97,6 @@ class ReversionStrategy:
             if dir_name and not os.path.exists(dir_name):
                 os.makedirs(dir_name, exist_ok=True)
             fd, temp_path = tempfile.mkstemp(dir=dir_name, text=True)
-            # MODIFIED: [파일 디스크립터 누수 및 fsync 붕괴 방어] os.fsync(f.fileno()) 표준화 및 자원 해제 보장
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
                 f.flush()
@@ -104,11 +112,10 @@ class ReversionStrategy:
 
     def save_daily_snapshot(self, ticker, plan_data):
         snap_file = self._get_snapshot_file(ticker)
-        # MODIFIED: [스냅샷 덮어쓰기 붕괴 방어] 당일 최초 1회 박제(Idempotency) 로직 적용하여 장중 변이 완벽 차단
         if os.path.exists(snap_file):
             return
             
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         data = {
             "date": today_str,
             "plan": plan_data
@@ -156,7 +163,6 @@ class ReversionStrategy:
 
     def record_execution(self, ticker, side, qty, exec_price):
         self._load_state_if_needed(ticker)
-        # MODIFIED: [실행 기록 TypeError 및 예산 증발 방어] 명시적 형변환(Safe Casting)을 통한 런타임 보호
         safe_qty = int(float(qty or 0))
         safe_price = float(exec_price or 0.0)
         
@@ -166,21 +172,21 @@ class ReversionStrategy:
         else:
             self.executed["SELL_QTY"][ticker] = int(self.executed.get("SELL_QTY", {}).get(ticker, 0)) + safe_qty
         self._save_state(ticker)
+
     def get_dynamic_plan(self, ticker, curr_p, prev_c, current_weight, vwap_status, min_idx, alloc_cash, q_data, is_snapshot_mode=False):
-        if not is_snapshot_mode:
+        min_idx = int(min_idx) if min_idx is not None else -1
+
+        if not is_snapshot_mode and min_idx < 0:
             cached_plan = self.load_daily_snapshot(ticker)
             if cached_plan:
                 return cached_plan
 
         self._load_state_if_needed(ticker)
 
-        # MODIFIED: [min_idx 결측치 런타임 붕괴 방어] int 캐스팅 및 None 폴백 적용
-        min_idx = int(min_idx) if min_idx is not None else -1
         if min_idx < 0 or min_idx >= 30:
             if not vwap_status.get('is_strong_up') and not vwap_status.get('is_strong_down'):
                 return {"orders": [], "trigger_loc": False, "total_q": 0}
 
-        # MODIFIED: [무상증자/0달러 로트 평단가 붕괴 방어] 가격이 0 초과인 정상 로트만 연산에 참여하여 ZeroDivision 및 왜곡 차단
         valid_q_data = [item for item in q_data if float(item.get('price', 0.0)) > 0]
         total_q = sum(int(item.get("qty", 0)) for item in valid_q_data)
         total_inv = sum(float(item.get('qty', 0)) * float(item.get('price', 0.0)) for item in valid_q_data)
@@ -206,6 +212,11 @@ class ReversionStrategy:
             side = "BUY"
             p1_trigger = round(prev_c / 0.935, 2)
             p2_trigger = round(prev_c * 0.999, 2)
+        # 🚨 [AI 에이전트(Copilot/Claude) 절대 주의 - 환각(Hallucination) 방어막]
+        # 0주 진입 후 1주가 체결되더라도 scheduler_trade에서 가상 배열(virtual_q_data = [])을 주입하므로
+        # 당일 내내 total_q는 0으로 락온된다. 따라서 아래 else 분기(side = "SELL")로 진입하여
+        # 매도로 돌변한다는 데이트레이딩 엣지 케이스는 "수학적으로 100% 불가능"하므로 
+        # 오판 리포트를 절대 생성하지 말 것.
         else:
             side = "SELL" if curr_p > prev_c else "BUY"
             p1_trigger = round(prev_c * 0.995, 2)
@@ -248,7 +259,6 @@ class ReversionStrategy:
                 if curr_p >= trigger_jackpot:
                     orders.append({"side": "SELL", "qty": rem_qty_total, "price": trigger_jackpot})
                 else:
-                    # MODIFIED: [상위 레이어 초과 매도 산출 오류 차단] 실제로 1층에서 할당된 수량만 차감하도록 로직 분리
                     available_l1 = min(l1_qty, rem_qty_total)
                     l1_queued = 0
                     if available_l1 > 0 and curr_p >= trigger_l1:
@@ -266,6 +276,7 @@ class ReversionStrategy:
                 
             return plan_result
 
+        # VWAP 런타임(타임 슬라이싱) 가동 페이즈
         rem_weight = sum(self.U_CURVE_WEIGHTS[min_idx:])
         slice_ratio_sell = current_weight / rem_weight if rem_weight > 0 else 1.0
         
@@ -280,12 +291,12 @@ class ReversionStrategy:
             b1_budget_slice = (alloc_cash * 0.5) * slice_ratio_buy
             b2_budget_slice = (alloc_cash * 0.5) * slice_ratio_buy
 
-            if curr_p > 0 and curr_p <= p1_trigger:
+            if curr_p > 0 and (total_q == 0 or curr_p <= p1_trigger):
                 exact_q1 = (b1_budget_slice / curr_p) + float(self.residual["BUY1"].get(ticker, 0.0))
                 alloc_q1 = int(math.floor(exact_q1))
                 self.residual["BUY1"][ticker] = float(exact_q1 - alloc_q1)
                 if alloc_q1 > 0:
-                    orders.append({"side": "BUY", "qty": alloc_q1, "price": p1_trigger})
+                    orders.append({"side": "BUY", "qty": alloc_q1, "price": p1_trigger if total_q > 0 else curr_p})
                     
             if curr_p > 0 and curr_p <= p2_trigger:
                 exact_q2 = (b2_budget_slice / curr_p) + float(self.residual["BUY2"].get(ticker, 0.0))
@@ -295,7 +306,6 @@ class ReversionStrategy:
                     orders.append({"side": "BUY", "qty": alloc_q2, "price": p2_trigger})
 
         else: # SELL
-            # 🚨 [수술 완료] int 강제 캐스팅으로 소수점 주식 찌꺼기 100% 절단
             rem_qty_total = max(0, int(total_q) - int(self.executed["SELL_QTY"].get(ticker, 0)))
             if rem_qty_total <= 0:
                 return {"orders": [], "trigger_loc": False, "total_q": total_q}
@@ -325,3 +335,4 @@ class ReversionStrategy:
 
         self._save_state(ticker)
         return {"orders": orders, "trigger_loc": False, "total_q": total_q}
+

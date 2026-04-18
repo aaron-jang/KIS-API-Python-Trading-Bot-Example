@@ -15,6 +15,8 @@
 # 🚨 [V27.06 코파일럿 합작] VWAP 매도 제논의 역설(목표량 실시간 축소) 앵커링 수술 및 fsync 객체 무결성 강화
 # 🚨 [V27.17 핫픽스] 상태 저장 I/O 예외 침묵(Amnesia) 방어 및 고립된 임시 파일(FD) 누수 원천 차단
 # 🚨 [V27.22 그랜드 수술] 0주 새출발 시 VWAP 매수 실종(Ghost Town) 버그 원천 차단 (상한선 1.15배 팩트 주입)
+# MODIFIED: [V28.19 타임존 락온] datetime.now()를 EST(미국 동부) 기준으로 강제 고정하여 KST 자정 경계 스냅샷 증발 버그 완벽 수술
+# NEW: [V28.20 무조건 진입] 0주 새출발 시 VWAP 런타임 타격에서 상한선 방어막 철거 (스냅샷 락온 디커플링 이식)
 # ==========================================================
 import math
 import logging
@@ -22,6 +24,7 @@ import os
 import json
 import tempfile
 from datetime import datetime
+import pytz
 
 class V14VwapStrategy:
     def __init__(self, config):
@@ -37,15 +40,15 @@ class V14VwapStrategy:
         ]
 
     def _get_state_file(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         return f"data/vwap_state_V14_{today_str}_{ticker}.json"
 
     def _get_snapshot_file(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         return f"data/daily_snapshot_V14VWAP_{today_str}_{ticker}.json"
 
     def _load_state_if_needed(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         if self.state_loaded.get(ticker) == today_str:
             return 
             
@@ -71,7 +74,7 @@ class V14VwapStrategy:
         self.state_loaded[ticker] = today_str
 
     def _save_state(self, ticker):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         state_file = self._get_state_file(ticker)
         data = {
             "date": today_str,
@@ -99,7 +102,7 @@ class V14VwapStrategy:
                 except OSError: pass
 
     def save_daily_snapshot(self, ticker, plan_data):
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d")
         snap_file = self._get_snapshot_file(ticker)
         data = {
             "date": today_str,
@@ -175,8 +178,8 @@ class V14VwapStrategy:
         process_status = "예방적방어선"
         
         if qty == 0:
+            # 0주 진입 스냅샷 락온용 1.15배 캡 보존 (수동 Fail-Safe 대응)
             p_buy = self._ceil(prev_close * 1.15)
-            # 🚨 [수술 완료] 0주 새출발 시 매수 상한선을 0.00 -> 1.15배로 주입하여 VWAP 엔진 매수 실종 방어
             buy_star_price = p_buy 
             
             q_buy = math.floor(dynamic_budget / p_buy) if p_buy > 0 else 0
@@ -202,7 +205,7 @@ class V14VwapStrategy:
         plan_result = {
             'core_orders': core_orders, 'bonus_orders': [], 'orders': core_orders,
             't_val': t_val, 'one_portion': dynamic_budget, 'star_price': star_price,
-            'buy_star_price': buy_star_price, # 0주 새출발일 경우 p_buy(1.15배)가 안전하게 저장됨
+            'buy_star_price': buy_star_price, 
             'star_ratio': star_ratio,
             'target_price': target_price, 'is_reverse': False,
             'process_status': process_status,
@@ -234,6 +237,11 @@ class V14VwapStrategy:
         
         initial_qty = int(plan_static.get('initial_qty', qty))
         
+        # NEW: [V28.20 방어막] min_idx가 유효하지 않을 경우(텔레그램 조회 시점 등) 조기 반환 
+        min_idx = int(min_idx) if min_idx is not None else -1
+        if min_idx < 0 or min_idx >= 30:
+            return {"orders": [], "trigger_loc": False}
+        
         rem_weight = sum(self.U_CURVE_WEIGHTS[min_idx:])
         slice_ratio = current_weight / rem_weight if rem_weight > 0 else 1.0
         
@@ -244,12 +252,13 @@ class V14VwapStrategy:
         
         if rem_budget > 0:
             slice_budget = rem_budget * slice_ratio
-            if buy_star_price > 0 and curr_p <= buy_star_price:
+            # MODIFIED: [V28.20 무조건 진입] 0주 새출발(initial_qty == 0)일 경우 상한선 캡을 무시하고 팩트 가격(curr_p)으로 무조건 진입
+            if buy_star_price > 0 and (initial_qty == 0 or curr_p <= buy_star_price):
                 exact_qty = (slice_budget / curr_p) + float(self.residual["BUY_STAR"].get(ticker, 0.0))
                 alloc_qty = int(math.floor(exact_qty))
                 self.residual["BUY_STAR"][ticker] = float(exact_qty - alloc_qty)
                 if alloc_qty > 0:
-                    orders.append({"side": "BUY", "qty": alloc_qty, "price": buy_star_price, "desc": "VWAP분할매수"})
+                    orders.append({"side": "BUY", "qty": alloc_qty, "price": buy_star_price if initial_qty > 0 else curr_p, "desc": "VWAP분할매수"})
 
         rem_sell_qty = int(math.ceil(initial_qty / 4)) - int(self.executed["SELL_QTY"].get(ticker, 0))
         if rem_sell_qty > 0 and star_price > 0:
@@ -262,3 +271,4 @@ class V14VwapStrategy:
 
         self._save_state(ticker)
         return {"orders": orders, "trigger_loc": False}
+

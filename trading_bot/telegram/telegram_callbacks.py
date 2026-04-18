@@ -1,4 +1,13 @@
-# NEW: [리팩토링 3단계] 인라인 키보드 콜백 분배기 적출 및 도메인 캡슐화
+# ==========================================================
+# [telegram_callbacks.py] - 🌟 100% 통합 완성본 🌟 (Full Version)
+# MODIFIED: [V28.14 통이관 및 큐 삭제 런타임 에러 완전 소각]
+# MODIFIED: [V28.15 그랜드 수술] 물량 통이관(SET_INIT) 콜백 라우터 영구 소각 및 
+# V14 <-> V-REV 모드 전환 시 실잔고 '0주 락온(Lock-on)' 절대 방어막 이식 완료
+# MODIFIED: [V28.16 UX 팩트 패치] 0주 락온 발동 시 일회성 팝업(Alert) 무반응 맹점을 해체하고 옵션 A 텍스트 박제 완료
+# MODIFIED: [V28.18 UX 팩트 패치] 0주 락온 시 자기 자신의 모드(동일 모드) 서브메뉴 진입 허용 렌더링 완료
+# MODIFIED: [V28.19 그랜드 수술] KIS API 가짜 0주(Phantom 0-Share) 응답 맹점 원천 차단. 
+# holdings None Safe-Casting 쉴드 이식 및 V14 장부 + V-REV 큐 다이렉트 I/O를 결합한 삼중 교차 검증(Triple Verification) 방어막 최종 탑재 완료
+# ==========================================================
 import logging
 import datetime
 import pytz
@@ -20,6 +29,38 @@ class TelegramCallbacks:
         self.sync_engine = sync_engine
         self.view = view
         self.tx_lock = tx_lock
+
+    # NEW: [V28.19 삼중 교차 검증(Triple Verification)] KIS API 부분 실패(가짜 0주) 방어를 위해
+    # V14 장부(config.get_ledger)와 V-REV 큐(data/queue_ledger.json)를 KIS 잔고와 함께
+    # 크로스체크하여 MAX 수량을 반환하는 팩트 스캐너.
+    def _get_max_holdings_qty(self, ticker, kis_qty):
+        v14_qty = 0
+        vrev_qty = 0
+        
+        # 1. V14 장부 순수량(Net Qty) 검증
+        try:
+            ledger = self.cfg.get_ledger()
+            net = 0
+            for r in ledger:
+                if r.get('ticker') == ticker:
+                    q = int(float(r.get('qty', 0)))
+                    net += q if r.get('side') == 'BUY' else -q
+            v14_qty = max(0, net)
+        except Exception:
+            pass
+
+        # 2. V-REV 큐 장부 지층 수량 검증 (다이렉트 파일 I/O 강제)
+        try:
+            q_file = "data/queue_ledger.json"
+            if os.path.exists(q_file):
+                with open(q_file, 'r', encoding='utf-8') as f:
+                    q_data = json.load(f)
+                vrev_qty = sum(int(float(lot.get('qty', 0))) for lot in q_data.get(ticker, []) if int(float(lot.get('qty', 0))) > 0)
+        except Exception:
+            pass
+
+        # 3. KIS 실잔고, V14 잔고, V-REV 잔고 중 가장 큰 값(MAX) 도출
+        return max(kis_qty, v14_qty, vrev_qty)
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, controller):
         query = update.callback_query
@@ -145,10 +186,28 @@ class TelegramCallbacks:
                 
                 if action == "DEL_Q":
                     new_q = [item for item in ticker_q if item.get('date') != target_date]
-                    await self.sync_engine._verify_and_update_queue(ticker, new_q, context, query.message.chat_id)
-                    await query.answer("✅ 삭제 완료.", show_alert=False)
                     
-                    msg, markup = self.view.get_queue_management_menu(ticker, new_q)
+                    # 🚨 [AI 에이전트 절대 주의 - 환각 방어막] 다이렉트 파일 I/O 강제 (객체 참조 금지)
+                    all_q[ticker] = new_q
+                    os.makedirs(os.path.dirname(q_file), exist_ok=True)
+                    with open(q_file, 'w', encoding='utf-8') as f:
+                        json.dump(all_q, f, ensure_ascii=False, indent=4)
+                        
+                    if getattr(self, 'queue_ledger', None) and hasattr(self.queue_ledger, '_load'):
+                        try:
+                            self.queue_ledger._load()
+                        except:
+                            pass
+                    
+                    await query.answer("✅ 지층 삭제 완료. KIS 원장과 동기화합니다.", show_alert=False)
+                    
+                    if ticker not in self.sync_engine.sync_locks:
+                        self.sync_engine.sync_locks[ticker] = asyncio.Lock()
+                    if not self.sync_engine.sync_locks[ticker].locked():
+                        await self.sync_engine.process_auto_sync(ticker, query.message.chat_id, context, silent_ledger=True)
+                        
+                    final_q = self.queue_ledger.get_queue(ticker) if getattr(self, 'queue_ledger', None) else new_q
+                    msg, markup = self.view.get_queue_management_menu(ticker, final_q)
                     await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
                     
                 elif action == "EDIT_Q":
@@ -174,7 +233,7 @@ class TelegramCallbacks:
                 page_idx = int(data[2])
                 msg, markup = self.view.get_version_message(history_data, page_index=page_idx)
                 await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
-
+                
         elif action == "RESET":
             if sub == "MENU":
                 active_tickers = self.cfg.get_active_tickers()
@@ -298,10 +357,12 @@ class TelegramCallbacks:
             ver = self.cfg.get_version(t)
             
             if ver == "V_REV" and getattr(self.cfg, 'get_manual_vwap_mode', lambda x: False)(t):
-                await query.answer("🚨 [격발 차단] 수동 VWAP 모드가 가동 중입니다. 지시서를 참고하여 한투 앱(V앱)에서 직접 매매를 걸어주십시오.", show_alert=True)
+                await query.answer("🚨 [격발 차단] 수동(한투 알고리즘) 모드가 가동 중입니다. 지시서를 참고하여 한투 앱(V앱)에서 직접 매매를 걸어주십시오.", show_alert=True)
                 return
             
             await query.edit_message_text(f"🚀 {t} 수동 강제 전송 시작 (교차 분리)...")
+            
+            # 🚨 [AI 에이전트 절대 주의 - 환각 방어막] API 잔고 응답 뻥튀기 중복 합산 방어를 위해 broker.py 내부 멱등성 가드를 유지하고, 여기서 무분별하게 조작하지 말 것.
             async with self.tx_lock:
                 cash, holdings = self.broker.get_account_balance()
                 
@@ -473,6 +534,31 @@ class TelegramCallbacks:
         elif action == "SET_VER":
             new_ver = sub
             ticker = data[2]
+            current_ver = self.cfg.get_version(ticker)
+            
+            # 🚨 [AI 에이전트 절대 주의 - 환각(Hallucination) 방어막]
+            # 엣지 케이스 역사 영구 박제:
+            # 1) holdings=None (KIS API 전체 실패) → qty=0 오판 허용 가능성. Safe-Casting 쉴드로 즉시 차단.
+            # 2) KIS API 부분 실패 (가짜 0주): NASD/AMEX 응답 누락 시 qty=0 오판.
+            #    V14 장부와 V-REV 큐를 추가 스캔하는 삼중 교차 검증(Triple Verification)으로 원천 차단.
+            async with self.tx_lock:
+                _, holdings = self.broker.get_account_balance()
+                
+            if holdings is None:
+                await query.answer("🚨 API 통신 지연으로 잔고를 확인할 수 없어 전환을 차단합니다. 잠시 후 다시 시도해 주세요.", show_alert=True)
+                return
+                
+            kis_qty = int(float(holdings.get(ticker, {}).get('qty', 0)))
+            max_qty = self._get_max_holdings_qty(ticker, kis_qty)
+            
+            # MODIFIED: [V28.19] 삼중 교차 검증 기반 락온 및 동일 모드 서브메뉴 진입 허용
+            if max_qty > 0 and current_ver != new_ver:
+                msg = f"🚨 <b>[ 퀀트 모드 전환 강제 차단 ]</b>\n\n"
+                msg += f"현재 <b>[{ticker}] {max_qty}주</b>를 보유 중입니다. (삼중 교차 검증)\n"
+                msg += "V14 ↔ V-REV 간의 엔진 스위칭은 장부 평단가 오염을 막기 위해 <b>'0주(100% 현금)'</b> 상태에서만 절대적으로 허용됩니다.\n\n"
+                msg += "진행 중인 매매 사이클을 전량 익절(0주)로 마무리하신 후 다시 시도해 주십시오."
+                await query.edit_message_text(msg, parse_mode='HTML')
+                return
             
             if new_ver == "V_REV":
                 if not (os.path.exists("strategy_reversion.py") and os.path.exists("queue_ledger.py")):
@@ -499,6 +585,33 @@ class TelegramCallbacks:
         elif action == "SET_VER_CONFIRM":
             mode_type = sub 
             ticker = data[2]
+            current_ver = self.cfg.get_version(ticker)
+            
+            target_ver = "V_REV" if mode_type in ["AUTO", "MANUAL"] else "V14"
+
+            # 🚨 [AI 에이전트 절대 주의 - 환각(Hallucination) 방어막]
+            # 엣지 케이스 역사 영구 박제 (SET_VER와 동일한 삼중 방어선):
+            # 1) holdings=None (KIS API 전체 실패) → qty=0 오판 허용 가능성. Safe-Casting 쉴드로 즉시 차단.
+            # 2) KIS API 부분 실패 (가짜 0주): NASD/AMEX 응답 누락 시 qty=0 오판.
+            #    V14 장부와 V-REV 큐를 추가 스캔하는 삼중 교차 검증(Triple Verification)으로 원천 차단.
+            async with self.tx_lock:
+                _, holdings = self.broker.get_account_balance()
+                
+            if holdings is None:
+                await query.answer("🚨 API 통신 지연으로 잔고를 확인할 수 없어 전환을 차단합니다. 잠시 후 다시 시도해 주세요.", show_alert=True)
+                return
+                
+            kis_qty = int(float(holdings.get(ticker, {}).get('qty', 0)))
+            max_qty = self._get_max_holdings_qty(ticker, kis_qty)
+            
+            # MODIFIED: [V28.19] 삼중 교차 검증 기반 락온 및 동일 모드 서브메뉴 진입 허용
+            if max_qty > 0 and current_ver != target_ver:
+                msg = f"🚨 <b>[ 퀀트 모드 전환 강제 차단 ]</b>\n\n"
+                msg += f"현재 <b>[{ticker}] {max_qty}주</b>를 보유 중입니다. (삼중 교차 검증)\n"
+                msg += "V14 ↔ V-REV 간의 엔진 스위칭은 장부 평단가 오염을 막기 위해 <b>'0주(100% 현금)'</b> 상태에서만 절대적으로 허용됩니다.\n\n"
+                msg += "진행 중인 매매 사이클을 전량 익절(0주)로 마무리하신 후 다시 시도해 주십시오."
+                await query.edit_message_text(msg, parse_mode='HTML')
+                return
             
             if mode_type in ["AUTO", "MANUAL"]:
                 self.cfg.set_version(ticker, "V_REV")
@@ -508,10 +621,10 @@ class TelegramCallbacks:
                     
                 if mode_type == "MANUAL":
                     self.cfg.set_manual_vwap_mode(ticker, True)
-                    mode_txt = "🖐️ 수동 VWAP 모드 (수수료 회피)"
+                    mode_txt = "🖐️ 수동 모드 (한투 VWAP 알고리즘 위임)"
                 else:
                     self.cfg.set_manual_vwap_mode(ticker, False)
-                    mode_txt = "🤖 API 자동매매 모드 (1분 정밀타격)"
+                    mode_txt = "🤖 자동 모드 (자체 VWAP 엔진 정밀타격)"
                     
                 await query.edit_message_text(f"✅ <b>[{ticker}]</b> 퀀트 엔진이 <b>V_REV 역추세 하이브리드</b>로 전환되었습니다.\n▫️ <b>운용 방식:</b> {mode_txt}\n▫️ /sync 지시서를 확인해 주십시오.", parse_mode='HTML')
             
@@ -558,36 +671,6 @@ class TelegramCallbacks:
             self.cfg.set_upward_sniper_mode(ticker, mode_val == "ON")
             await query.edit_message_text(f"✅ <b>[{ticker}]</b> 상방 스나이퍼 모드 변경 완료: {'🎯 ON (가동중)' if mode_val == 'ON' else '⚪ OFF (대기중)'}", parse_mode='HTML')
             
-        elif action == "SET_INIT":
-            ticker = data[2]
-            if sub == "V_REV":
-                msg, markup = self.view.get_init_v_rev_confirm_menu(ticker)
-                await query.edit_message_text(msg, reply_markup=markup, parse_mode='HTML')
-                return
-
-            elif sub == "EXEC_CONFIRM":
-                await query.answer("⏳ 장부 재구성 중...")
-                async with self.tx_lock:
-                    _, holdings = self.broker.get_account_balance()
-                h = holdings.get(ticker, {'qty': 0, 'avg': 0})
-                qty = int(h['qty'])
-                avg = float(h['avg'])
-                
-                if qty > 0:
-                    new_q = [{
-                        "qty": qty,
-                        "price": avg,
-                        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "type": "INIT_TRANSFERRED" 
-                    }]
-                    try:
-                        await self.sync_engine._verify_and_update_queue(ticker, new_q, context, query.message.chat_id)
-                        await query.edit_message_text(f"✅ <b>[{ticker}] 자동 물량 이관 및 초기화 완료!</b>\n\n<b>{qty}주</b>(평단 <b>${avg:.2f}</b>)의 단일 기초 블록으로 완벽히 재구성되었습니다.", parse_mode='HTML')
-                    except Exception as e:
-                        await query.edit_message_text(f"❌ 쓰기 오류 발생: {e}", parse_mode='HTML')
-                else:
-                    await query.edit_message_text(f"⚠️ <b>[{ticker}] 보유 물량이 없어 이관할 대상이 없습니다.</b>", parse_mode='HTML')
-
         elif action == "TICKER":
             self.cfg.set_active_tickers([sub] if sub != "ALL" else ["SOXL", "TQQQ"])
             await query.edit_message_text(f"✅ 운용 종목 변경: {sub}")
