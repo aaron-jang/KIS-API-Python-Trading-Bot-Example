@@ -17,6 +17,7 @@
 # 🚨 [V27.15 코파일럿 합작] FD 누수 방어, 스냅샷 덮어쓰기 락온, 0달러 로트 배제 및 TypeError 런타임 붕괴 방어막 이식 완료
 # MODIFIED: [V28.08 그랜드 수술] 스냅샷 영구 박제에 따른 VWAP 디커플링 방어막 완벽 이식 (0주 새출발 타임 패러독스 영구 소각)
 # MODIFIED: [V28.19 타임존 락온] datetime.now()를 EST(미국 동부) 기준으로 강제 고정하여 KST 자정 경계 스냅샷 증발 버그 완벽 수술
+# NEW: [V28.20 무조건 진입 투트랙] 0주 새출발 시 VWAP 런타임 타격에서 Buy1 상한선 방어막 철거 (스냅샷 락온과 완벽한 디커플링 이식)
 # ==========================================================
 import math
 import os
@@ -174,6 +175,7 @@ class ReversionStrategy:
     def get_dynamic_plan(self, ticker, curr_p, prev_c, current_weight, vwap_status, min_idx, alloc_cash, q_data, is_snapshot_mode=False):
         min_idx = int(min_idx) if min_idx is not None else -1
 
+        # NEW: 스냅샷 모드가 아니고, 텔레그램 조회 시점(min_idx < 0)이라면 스냅샷 영구 박제본 로드 (디커플링 룰 100% 준수)
         if not is_snapshot_mode and min_idx < 0:
             cached_plan = self.load_daily_snapshot(ticker)
             if cached_plan:
@@ -208,6 +210,7 @@ class ReversionStrategy:
 
         if total_q == 0:
             side = "BUY"
+            # 0주 새출발일 경우 Fail-Safe LOC 스냅샷 락온을 위해 타점 산출은 기존 팩트 그대로 보존
             p1_trigger = round(prev_c / 0.935, 2)
             p2_trigger = round(prev_c * 0.999, 2)
         else:
@@ -269,6 +272,7 @@ class ReversionStrategy:
                 
             return plan_result
 
+        # VWAP 런타임(타임 슬라이싱) 가동 페이즈
         rem_weight = sum(self.U_CURVE_WEIGHTS[min_idx:])
         slice_ratio_sell = current_weight / rem_weight if rem_weight > 0 else 1.0
         
@@ -283,13 +287,17 @@ class ReversionStrategy:
             b1_budget_slice = (alloc_cash * 0.5) * slice_ratio_buy
             b2_budget_slice = (alloc_cash * 0.5) * slice_ratio_buy
 
-            if curr_p > 0 and curr_p <= p1_trigger:
+            # MODIFIED: [V28.20 무조건 진입 투트랙] 
+            # total_q == 0 (새출발)일 경우 스냅샷 캡(p1_trigger)을 무시하고, 할당 예산을 팩트(현재가)로 즉각 타격
+            if curr_p > 0 and (total_q == 0 or curr_p <= p1_trigger):
+                # 0주일 때 호가 제한 방어막 Bypass 적용 완료
                 exact_q1 = (b1_budget_slice / curr_p) + float(self.residual["BUY1"].get(ticker, 0.0))
                 alloc_q1 = int(math.floor(exact_q1))
                 self.residual["BUY1"][ticker] = float(exact_q1 - alloc_q1)
                 if alloc_q1 > 0:
-                    orders.append({"side": "BUY", "qty": alloc_q1, "price": p1_trigger})
+                    orders.append({"side": "BUY", "qty": alloc_q1, "price": p1_trigger if total_q > 0 else curr_p})
                     
+            # Buy2 (하방 방어) 락온은 0주 진입 시에도 유지하여 극단적 꼬리 위험(Tail Risk) 헷징
             if curr_p > 0 and curr_p <= p2_trigger:
                 exact_q2 = (b2_budget_slice / curr_p) + float(self.residual["BUY2"].get(ticker, 0.0))
                 alloc_q2 = int(math.floor(exact_q2))
@@ -327,3 +335,4 @@ class ReversionStrategy:
 
         self._save_state(ticker)
         return {"orders": orders, "trigger_loc": False, "total_q": total_q}
+
