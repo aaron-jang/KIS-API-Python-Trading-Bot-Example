@@ -30,13 +30,15 @@ jobs:
       - name: Run tests
         id: pytest
         run: |
-          RESULT=$(python -m pytest tests/ -v --tb=short 2>&1)
-          echo "$RESULT"
-          # "217 passed" 같은 패턴에서 숫자 추출
-          PASSED=$(echo "$RESULT" | grep -oP '\d+(?= passed)' || echo "0")
-          FAILED=$(echo "$RESULT" | grep -oP '\d+(?= failed)' || echo "0")
+          set +e
+          python -m pytest tests/ -v --tb=short 2>&1 | tee /tmp/pytest_output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          PASSED=$(grep -oP '\d+(?= passed)' /tmp/pytest_output.txt || echo "0")
+          FAILED=$(grep -oP '\d+(?= failed)' /tmp/pytest_output.txt || echo "0")
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
           echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          exit $EXIT_CODE
 
       - name: Update test badge
         if: matrix.python-version == '3.12' && github.ref == 'refs/heads/main' && github.event_name == 'push'

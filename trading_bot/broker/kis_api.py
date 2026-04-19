@@ -26,11 +26,7 @@ import tempfile
 import shutil  
 import pandas as pd   
 import numpy as np
-<<<<<<< HEAD:trading_bot/broker/kis_api.py
 import trading_bot.strategy.volatility as ve
-=======
-import volatility_engine as ve
->>>>>>> upstream/main:broker.py
 import logging  # NEW: 예외 발생 시 침묵 방지를 위한 로깅 모듈 추가
 
 class KoreaInvestmentBroker:

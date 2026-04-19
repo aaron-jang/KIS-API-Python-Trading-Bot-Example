@@ -11,17 +11,10 @@
 # ==========================================================
 import logging
 import pandas as pd
-<<<<<<< HEAD:trading_bot/strategy/infinite.py
 from trading_bot.strategy.v14 import V14Strategy
 from trading_bot.strategy.v_avwap import VAvwapHybridPlugin  
 from trading_bot.strategy.reversion import ReversionStrategy
 from trading_bot.strategy.v14_vwap import V14VwapStrategy
-=======
-from strategy_v14 import V14Strategy
-from strategy_v_avwap import VAvwapHybridPlugin  
-from strategy_reversion import ReversionStrategy
-from strategy_v14_vwap import V14VwapStrategy
->>>>>>> upstream/main:strategy.py
 
 class InfiniteStrategy:
     def __init__(self, config):
