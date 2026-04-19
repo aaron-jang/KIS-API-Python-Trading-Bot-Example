@@ -10,6 +10,8 @@
 # NEW: [V28.22 AI 환각 방어 백신 이식] VWAP 디커플링 로직에 AI 에이전트 오판 차단 경고 주석 하드코딩
 # NEW: [V28.28] 수동 매도(뇌동매매)로 인한 0주 락온 디커플링 상태(EC-1, EC-2) 감지 및 스나이퍼/VWAP 셧다운 방어막 추가
 # NEW: [V28.30] 애프터마켓 로터리 덫 휴장일 오발탄(False Fire) 엣지 케이스 원천 차단 (is_market_open 방어막 이식)
+# NEW: [V28.31] 텔레그램 수동 제어(상방 스나이퍼 ON/OFF) 디커플링 해체 및 코어 엔진 통제망 이식
+# NEW: [V28.33] 코파일럿 아키텍처 채택: V14 오리지널 상방 스나이퍼(잭팟/트레일링 쿼터) 코어 엔진 100% 통합 이식
 # ==========================================================
 import os
 import logging
@@ -165,6 +167,114 @@ async def scheduled_sniper_monitor(context):
                             tracking_cache[f"AVWAP_SHUTDOWN_{t}"], tracking_cache[f"AVWAP_QTY_{t}"], tracking_cache[f"AVWAP_AVG_{t}"] = True, 0, 0.0
                             await context.bot.send_message(chat_id=chat_id, text=f"🏆 <b>[{t}] 하이브리드 AVWAP 독립물량 청산 완료!</b>", parse_mode='HTML')
                     continue
+
+                # 🚨 [수술 3: 코파일럿 채택] V14 오리지널 상방 스나이퍼 독립제어 엔진 이식
+                # V_REV는 위 continue로 항상 탈출하므로 여기는 100% V14만 도달합니다.
+                if version != "V14":
+                    continue
+                if not cfg.get_upward_sniper_mode(t):
+                    continue
+                if tracking_cache.get(f"V14_{t}_sniper_done"):
+                    continue
+
+                h = holdings.get(t) or {}
+                actual_qty = int(float(h.get('qty', 0)))
+                actual_avg = float(h.get('avg', 0.0))
+                if actual_qty <= 0 or actual_avg <= 0:
+                    continue
+
+                # 스냅샷에서 별값(star_price) 로드, 목표가(target_price) 실시간 역산
+                v14_snap = None
+                try:
+                    if hasattr(strategy, 'v14_plugin') and hasattr(strategy.v14_plugin, 'load_daily_snapshot'):
+                        v14_snap = strategy.v14_plugin.load_daily_snapshot(t)
+                except Exception:
+                    pass
+
+                star_price = float(v14_snap.get('star_price', 0.0)) if v14_snap else 0.0
+                target_ratio = cfg.get_target_profit(t) / 100.0
+                target_price = math.ceil(actual_avg * (1 + target_ratio) * 100) / 100.0
+                
+                sniper_floor = max(star_price, actual_avg * 1.005)
+                
+                exec_curr_p = float(await asyncio.to_thread(broker.get_current_price, t) or 0.0)
+                if exec_curr_p <= 0:
+                    continue
+
+                day_high, _ = await asyncio.to_thread(broker.get_day_high_low, t)
+                day_high = float(day_high or exec_curr_p)
+                
+                tracking_status = tracking_cache.setdefault(t, {})
+                tracking_status['day_high'] = day_high
+                tracking_status['sniper_floor'] = sniper_floor
+                tracking_status['target_price'] = target_price
+
+                # [조건 1: 잭팟 스윕]
+                if exec_curr_p >= target_price:
+                    bid_p = float(await asyncio.to_thread(broker.get_bid_price, t) or exec_curr_p)
+                    await asyncio.to_thread(broker.cancel_all_orders_safe, t, "SELL")
+                    await asyncio.sleep(0.5)
+                    
+                    res = broker.send_order(t, "SELL", actual_qty, bid_p, "LIMIT")
+                    if res.get('rt_cd') == '0':
+                        tracking_cache[f"V14_{t}_sniper_done"] = True
+                        cfg.set_lock(t, "SNIPER_SELL")
+                        try:
+                            if hasattr(strategy, 'v14_plugin') and hasattr(strategy.v14_plugin, '_mark_quarter_sell_completed'):
+                                strategy.v14_plugin._mark_quarter_sell_completed(t)
+                        except Exception: pass
+                        
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"🎯 <b>[{t}] 잭팟 목표가(${target_price:.2f}) 돌파! 전량 익절 격발!</b>\n"
+                                 f"▫️ 전량 {actual_qty}주 → 매도가: ${bid_p:.2f}",
+                            parse_mode='HTML'
+                        )
+                    else:
+                        await context.bot.send_message(chat_id=chat_id, text=f"🚨 <b>[{t}] 잭팟 익절 실패:</b> {res.get('msg1')}", parse_mode='HTML')
+                    continue
+
+                # [조건 2: 쿼터 트레일링 익절]
+                if day_high >= sniper_floor:
+                    tracking_status['is_trailing'] = True
+                    
+                    if not tracking_cache.get(f"V14_{t}_armed_msg"):
+                        tracking_cache[f"V14_{t}_armed_msg"] = True
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"🦅 <b>[{t}] 스나이퍼 락온(Armed)!</b>\n▫️ 가격이 ${sniper_floor:.2f}를 돌파했습니다. 트레일링 익절 감시를 시작합니다.",
+                            parse_mode='HTML'
+                        )
+                        
+                    pullback_threshold = day_high * (1 - 0.015)  # 고점 대비 -1.5% 하락 시
+                    
+                    if exec_curr_p <= pullback_threshold:
+                        sell_qty = min(actual_qty, math.ceil(actual_qty / 4))
+                        if sell_qty <= 0:
+                            continue
+                            
+                        bid_p = float(await asyncio.to_thread(broker.get_bid_price, t) or exec_curr_p)
+                        await asyncio.to_thread(broker.cancel_all_orders_safe, t, "SELL")
+                        await asyncio.sleep(0.5)
+                        
+                        res = broker.send_order(t, "SELL", sell_qty, bid_p, "LIMIT")
+                        if res.get('rt_cd') == '0':
+                            tracking_cache[f"V14_{t}_sniper_done"] = True
+                            cfg.set_lock(t, "SNIPER_SELL")
+                            try:
+                                if hasattr(strategy, 'v14_plugin') and hasattr(strategy.v14_plugin, '_mark_quarter_sell_completed'):
+                                    strategy.v14_plugin._mark_quarter_sell_completed(t)
+                            except Exception: pass
+                            
+                            await context.bot.send_message(
+                                chat_id=chat_id,
+                                text=f"🦅 <b>[{t}] 스나이퍼 쿼터 익절 작렬!</b>\n"
+                                     f"▫️ 최고가(${day_high:.2f}) 대비 1.5% 하락 감지\n"
+                                     f"▫️ 물량 {sell_qty}주 → 매도가: ${bid_p:.2f}",
+                                parse_mode='HTML'
+                            )
+                        else:
+                            await context.bot.send_message(chat_id=chat_id, text=f"🚨 <b>[{t}] 쿼터 익절 실패:</b> {res.get('msg1')}", parse_mode='HTML')
 
     try:
         await asyncio.wait_for(_do_sniper(), timeout=45.0)

@@ -12,6 +12,7 @@
 # 100% 정밀 타격하여 렌더링하도록 팩트 라우팅 엔진 이식.
 # MODIFIED: [V28.25 그랜드 수술] 동적 수수료율 설정을 위한 INPUT:FEE 콜백 라우팅 분기 신설 완료.
 # MODIFIED: [V28.27] 수동 매도로 인한 0주 락온 디커플링 상태 감지 및 /reset 유도 방어막 추가
+# MODIFIED: [V28.32] 코파일럿 아키텍처 채택: V14 전용 상방 스나이퍼 로직 충돌 방지를 위한 V-REV 락다운 방어막 원상 복구
 # ==========================================================
 import logging
 import datetime
@@ -679,11 +680,14 @@ class TelegramCallbacks:
                 await query.edit_message_text(f"🛑 <b>[{ticker}] 차세대 AVWAP 하이브리드 전술이 즉시 해제되었습니다.</b>", parse_mode='HTML')
                 return
 
+            # 🚨 [수술 2: 코파일럿 팩트 원상 복구]
+            # V-REV 모드에서는 V14 전용인 상방 스나이퍼를 작동시킬 수 없게 막는 
+            # 오리지널 로직 충돌 방어막을 다시 완벽히 살려냈습니다.
             current_ver = self.cfg.get_version(ticker)
             if current_ver == "V_REV" and mode_val == "ON":
                 await query.answer(f"🚨 {current_ver} 모드에서는 로직 충돌 방지를 위해 상방 스나이퍼를 켤 수 없습니다!", show_alert=True)
                 return
-                
+
             self.cfg.set_upward_sniper_mode(ticker, mode_val == "ON")
             await query.edit_message_text(f"✅ <b>[{ticker}]</b> 상방 스나이퍼 모드 변경 완료: {'🎯 ON (가동중)' if mode_val == 'ON' else '⚪ OFF (대기중)'}", parse_mode='HTML')
             
