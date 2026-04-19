@@ -6,9 +6,11 @@
 ![Version](https://img.shields.io/badge/version-V28.27-orange)
 ![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey)
 
-> KIS Open API 기반 미국 주식 자동매매 봇 (V28.27 4대 집행 모드 통합 에디션)
+> 한국투자증권(KIS) Open API 기반 미국 주식 자동매매 파이썬 봇 (V28.27)
 
-한국투자증권(KIS) Open API를 활용하여 미국 주식 자동매매 시스템을 구축해보는 파이썬 예제 코드입니다. 증권사 API 통신, 스케줄러 자동화, 텔레그램 봇 제어 등을 학습하기 위한 기술적 레퍼런스로 작성되었습니다.
+한국투자증권 Open API를 활용하여 미국 주식(SOXL, TQQQ 등)을 자동으로 매매하는 파이썬 트레이딩 봇 예제입니다. 라오어의 무한매수법 퀀트 전략, VWAP 타임 슬라이싱, 텔레그램 봇 제어, Docker 배포를 학습할 수 있는 기술적 레퍼런스로 작성되었습니다.
+
+**Keywords**: 한투 API, 한국투자증권 자동매매, 미국주식 자동매매 봇, 라오어 무한매수법 파이썬, SOXL TQQQ 자동매매, VWAP 알고리즘, 텔레그램 트레이딩봇, KIS Open API Python, US Stock Trading Bot, Raspberry Pi 주식봇
 
 ---
 
@@ -16,9 +18,9 @@
 
 - [저작권 및 게시 중단 정책](#저작권-및-게시-중단take-down-정책)
 - [면책 조항](#면책-조항-disclaimer)
-- [주요 기술적 특징](#주요-기술적-특징)
-- [필수 환경](#필수-환경)
-- [설치 및 실행](#설치-및-실행)
+- [주요 기능](#주요-기능)
+- [기술 스택](#기술-스택)
+- [빠른 시작](#빠른-시작)
   - [Docker Compose](#방법-1-docker-compose-권장)
   - [스크립트 실행](#방법-2-스크립트-실행-linux)
   - [systemd 서비스 등록](#방법-3-systemd-서비스-등록-linux-재부팅-시-자동-실행)
@@ -49,29 +51,54 @@
 
 ---
 
-## 주요 기술적 특징
+## 주요 기능
+
+### 매매 엔진
 
 | 기능 | 설명 |
 |------|------|
-| **VWAP 자율주행 엔진** | 장 마감 30분 전 U-Curve 유동성 프로파일을 추종하여 예산/수량을 1분 단위로 분할. 실시간 1호가(Bid/Ask) 스캔 후 지정가 즉결 체결 |
-| **2대 코어 아키텍처** | V14(순수 공격) + V-REV(역추세 방어, VWAP 내장) 2개 엔진만으로 구성된 초경량 플러그인 구조 |
-| **공수 분리 & 타점 방어막** | 12% 잭팟 등 상방 익절 텐트 보존, LOC 덫만 핀셋 철거. 매수 시 Ceiling, 매도 시 Floor 락인으로 고점 불타기/저점 손절 차단 |
-| **멀티 코어 스케줄러** | 시스템 관리(core_jobs)와 실전 매매(trade_jobs)를 분리하여 SRP 준수 |
-| **텔레그램 스마트 UI** | 모바일에서 인라인 버튼으로 장부 조회, 퀀트 엔진 스위칭 |
-| **TrueSync 장부 동기화** | NYSE 영업일 자동 인식, API 체결 내역으로 가상 장부와 실제 잔고 오차 동기화 |
-| **KIS API 토큰 관리** | OAuth2 토큰 로컬 캐싱, 만료 전 자동 갱신(Self-Healing), 원자적 쓰기(fsync) |
+| **라오어 무한매수법(V14) 퀀트 엔진** | T값, 별값 공식 기반 분할 매수/매도. LOC 단일 타격 또는 VWAP 슬라이싱 선택 가능 |
+| **V-REV 역추세 방어 엔진** | LIFO 지층별 독립 익절, 0주 새출발 디커플링(0.999/0.935), 자동/수동 VWAP 모드 |
+| **VWAP 타임 슬라이싱** | 장 마감 33분 전부터 U-Curve 유동성 가중치로 1분 단위 분할 매매. 5년 백테스트 기반 30개 가중치 |
+| **AVWAP 듀얼 레퍼런싱** | 기초자산(SOXX) 시그널 스캔 + 파생상품(SOXL) 호가창 타격. 3대 강제 청산(하드스탑, 스퀴즈, 타임스탑) |
+| **잭팟 스윕 피니셔** | 목표 수익률 도달 시 전량 지정가 덤핑. 거래소 락다운 우회, Daily Buy-Lock 방어 |
+
+### 시스템
+
+| 기능 | 설명 |
+|------|------|
+| **멀티 코어 스케줄러** | 시스템 관리(core_jobs)와 실전 매매(trade_jobs) SRP 분리 |
+| **텔레그램 모바일 UI** | 인라인 버튼으로 장부 조회, 수동 주문, 모드 전환, 졸업 카드 발급 |
+| **TrueSync 장부 동기화** | NYSE 영업일 자동 인식, 비파괴 보정(CALIB), 팩트 기반 잔고 교정 |
+| **KIS API 토큰 관리** | OAuth2 로컬 캐싱, 만료 전 자동 갱신(Self-Healing), 원자적 쓰기(fsync) |
+| **공포지수 기반 Regime-Switching** | ATR/VXN 실시간 스캔으로 하방 매수 차단/상방 익절 전환 자율주행 |
+| **졸업 카드 GIF 렌더링** | 전량 익절 달성 시 수익금을 각인한 움짤(.gif) 텔레그램 자동 발급 |
 
 ---
 
-## 필수 환경
+## 기술 스택
+
+| 분류 | 기술 |
+|------|------|
+| **언어** | Python 3.12+ |
+| **증권 API** | 한국투자증권(KIS) Open API (REST, OAuth2) |
+| **시세 데이터** | yfinance (야후 파이낸스) |
+| **봇 프레임워크** | python-telegram-bot (JobQueue 스케줄러) |
+| **데이터 처리** | pandas, numpy, pandas_market_calendars |
+| **이미지 생성** | Pillow (PIL) |
+| **배포** | Docker, Docker Compose, systemd, Raspberry Pi |
+| **CI/CD** | GitHub Actions (Python 3.12/3.13, Docker 빌드) |
+| **테스트** | pytest, pytest-asyncio (291 tests) |
+
+---
+
+## 빠른 시작
+
+### 필수 환경
 
 - Python 3.12 이상
 - 한국투자증권 Open API 발급 (App Key, App Secret)
 - Telegram Bot Token 및 Chat ID
-
----
-
-## 설치 및 실행
 
 ### 방법 1: Docker Compose (권장)
 
@@ -161,31 +188,36 @@ ACNT_PRDT_CD=01
 ## 프로젝트 구조
 
 ```
-main.py                         # 진입점 (3줄)
+main.py                         # 진입점
 trading_bot/
 ├── app.py                      # 부트스트래핑, 스케줄러 등록
 ├── config.py                   # 설정/장부/잠금 관리
+├── plugin_updater.py           # 시스템 자가 업데이트 엔진
 ├── version_history.py          # 버전 기록
 │
 ├── broker/                     # 외부 API 통신
 │   └── kis_api.py              # KIS REST API, 토큰 관리, 호가 스캔
 │
-├── strategy/                   # 매매 전략 (2대 코어 + AVWAP 하이브리드)
-│   ├── infinite.py             # 중앙 라우터 (V14/V-REV 분기)
-│   ├── v14.py                  # V14 무한매수법 플러그인
+├── strategy/                   # 매매 전략 (4대 집행 모드)
+│   ├── infinite.py             # 중앙 라우터 (V14-LOC/VWAP, V-REV Auto/Manual)
+│   ├── v14.py                  # V14 무한매수법 LOC 플러그인
+│   ├── v14_vwap.py             # V14 VWAP 타임 슬라이싱 플러그인
 │   ├── reversion.py            # V-REV 역추세 엔진 (VWAP 내장)
 │   ├── v_avwap.py              # AVWAP 듀얼 레퍼런싱 스나이퍼
-│   ├── queue_ledger.py         # LIFO 큐 기반 비파괴 장부
+│   ├── queue_ledger.py         # LIFO 큐 기반 비파괴 장부 (원자적 쓰기, 스레드 안전)
 │   └── volatility.py           # ATR/VXN 변동성 계산
 │
-├── scheduler/                  # 스케줄 실행
-│   ├── core_jobs.py            # 토큰 갱신, 장부 동기화, 자정 청소
-│   └── trade_jobs.py           # 정규매매, 스나이퍼, VWAP 실행
+├── scheduler/                  # 스케줄 실행 (멀티 코어)
+│   ├── core_jobs.py            # 토큰 갱신, 장부 동기화, 자정 청소, 확정 정산
+│   └── trade_jobs.py           # 정규매매, 스나이퍼, VWAP 실행, 스윕 피니셔
 │
-├── telegram/                   # UI 계층
+├── telegram/                   # UI 계층 (4모듈 분할)
 │   ├── commands.py             # 텔레그램 커맨드 라우터
+│   ├── telegram_callbacks.py   # 인라인 버튼 콜백 핸들러
+│   ├── telegram_states.py      # 대화 상태 머신
+│   ├── telegram_sync_engine.py # 장부 동기화 엔진
 │   ├── ticker_commands.py      # 티커 프로필 관리 명령어
-│   └���─ views.py                # 메시지/이미지 렌더링
+│   └── views.py                # 메시지/이미지/GIF 렌더링
 │
 ├── models/                     # 도메인 모델 (순수 데이터)
 │   ├── order.py                # Order, OrderSide, OrderType
@@ -196,11 +228,11 @@ trading_bot/
     ├── file_utils.py           # 원자적 JSON/텍스트 I/O
     ├── ledger_store.py         # 장부 CRUD + 보유현황 계산
     ├── lock_manager.py         # 매매 잠금 + 에스크로
-    ├── ticker_profiles.py      # 티커 프로필 관리 (등록/삭제/조회)
+    ├── ticker_profiles.py      # 티커 프로필 관리
     └── trading_config.py       # 종목별 설정 관리
 
-tests/                          # 테스트 (197개)
-docs/                           # 문서
+tests/                          # 테스트 (291개)
+docs/                           # 기술 문서
 ```
 
 ---
@@ -211,52 +243,60 @@ docs/                           # 문서
 
 | 명령어 | 기능 | 상세 |
 |--------|------|------|
-| `/start` | 봇 시작 | - 운영 스케줄(토큰 갱신, 동기화, 주문 시각) 표시<br>- 주요 명령어 목록 안내<br>- 서머타임/겨울시간 자동 감지 정보 |
-| `/sync` | 통합 지시서 | - 실시간 KIS API + 야후 시세 기반 매매 전략 브리핑<br>- 종목별 T값, 별값, 1회분 예산, 스나이퍼 타격선 표시<br>- 현재 보유 수량, 평단가, 손익률 실시간 계산<br>- 인라인 버튼으로 수동 주문 즉시 실행 가능<br>- 외화 RP 권장 금액 자동 산출 |
-| `/record` | 장부 동기화 | - KIS API 실잔고와 가상 장부를 비교하여 자동 보정 (TrueSync)<br>- 수량/평단가 오차 감지 시 비파괴 보정(CALIB) 자동 적용<br>- 보유 종목별 거래 내역 대시보드 렌더링<br>- 졸업(전량 매도) 자동 감지 → 명예의 전당 박제 + 자동 복리 |
-| `/history` | 졸업 명예의 전당 | - 과거 완료된 매매 사이클(졸업) 기록 조회<br>- 졸업별 수익금, 수익률, 투자금, 매도금 상세 확인<br>- 인라인 버튼으로 개별 졸업 거래 내역 펼치기<br>- 수익 리포트 이미지(배경 이미지 포함) 자동 생성 |
-| `/version` | 버전 내역 | - 코드 업데이트 히스토리를 5개씩 페이징하여 조회<br>- 인라인 버튼으로 이전/다음 페이지 탐색 |
+| `/start` | 봇 시작 | 운영 스케줄, 명령어 목록, 서머타임 자동 감지 |
+| `/sync` | 통합 지시서 | 실시간 KIS + 야후 시세 기반 매매 전략 브리핑. 인라인 버튼 수동 주문 |
+| `/record` | 장부 동기화 | TrueSync 비파괴 보정(CALIB). 졸업 자동 감지 → 명예의 전당 |
+| `/history` | 졸업 명예의 전당 | 과거 매매 사이클 수익 기록. GIF 졸업 카드 발급 |
+| `/version` | 버전 내역 | 코드 업데이트 히스토리 페이징 조회 |
 
 ### 설정
 
 | 명령어 | 기능 | 상세 |
 |--------|------|------|
-| `/settlement` | 분할/복리/버전 설정 | - 종목별 분할 수 변경 (20/40/60)<br>- 목표 수익률(%) 설정 (SOXL 12%, TQQQ 10% 등)<br>- 복리율(%) 조절 (졸업 수익의 몇 %를 시드에 재투자)<br>- 매매 엔진 버전 전환 (V14 ↔ V_REV)<br>- 실시간 변동성 지표(HV/VXN) 연산 결과 표시 |
-| `/seed` | 시드머니 관리 | - 종목별 운용 시드머니 금액 조절<br>- 추가(+$100), 감소(-$100), 고정(직접 입력) 3가지 방식<br>- 현재 설정된 시드 금액 실시간 표시 |
-| `/ticker` | 운용 종목 선택 | - 프로필에 등록된 모든 티커를 토글 버튼으로 다중 선택<br>- ✅/⬜ 클릭으로 선택/해제, ✔️ 확정으로 저장<br>- 기존 활성 종목을 초기 선택 상태로 로드 |
-| `/mode` | 스나이퍼 ON/OFF | - 종목별 상방 익절 스나이퍼 기능을 개별적으로 활성화/비활성화<br>- 현재 ON/OFF 상태 표시 |
+| `/settlement` | 분할/복리/버전 설정 | 분할 수, 목표 수익률, 복리율, 수수료율, V14/V-REV 전환 |
+| `/seed` | 시드머니 관리 | 종목별 운용 시드 금액 조절 (+$100/-$100/직접 입력) |
+| `/ticker` | 운용 종목 선택 | 토글 버튼으로 다중 종목 선택/해제 |
+| `/mode` | 스나이퍼 ON/OFF | 종목별 상방 익절 스나이퍼 활성화/비활성화 |
 
 ### 긴급
 
 | 명령어 | 기능 | 상세 |
 |--------|------|------|
-| `/reset` | 비상 해제 | - 매매 잠금(REG/SNIPER) 강제 해제<br>- 리버스 모드 강제 탈출<br>- 장부 초기화 (본장부 + 에스크로 + 큐 삼위일체 소각)<br>- 인라인 버튼으로 종목 선택 → 확인 단계 필요 (오작동 방지) |
-| `/add_q` | V-REV 큐 수동 추가 | - V-REV 엔진의 LIFO 큐에 수동으로 매수 기록 추가<br>- 양식: `/add_q SOXL 2026-04-06 20 52.16`<br>- 기존 보유분을 V-REV 큐에 수동 등록할 때 사용 |
+| `/reset` | 비상 해제 | 매매 잠금 해제, 리버스 탈출, 장부 삼위일체 소각 |
+| `/add_q` | V-REV 큐 수동 추가 | 양식: `/add_q SOXL 2026-04-06 20 52.16` |
 
-### 티커 프로필 관리 (신규 종목 등록)
+### 티커 프로필 관리
 
 | 명령어 | 기능 | 상세 |
 |--------|------|------|
-| `/ticker_add` | 신규 티커 등록 | - 양식: `/ticker_add TICKER BASE REVERSE_EXIT TRAILING_STOP`<br>- 예시: `/ticker_add UPRO SPY -18 1.2`<br>- yfinance로 티커/기초자산 실존 검증<br>- 기초자산 매핑, 리버스 탈출 수익률(%), 트레일링 스탑(%) 설정<br>- 시드/분할/목표는 `/seed`, `/settlement`로 별도 설정 |
-| `/ticker_remove` | 티커 프로필 삭제 | - 양식: `/ticker_remove TICKER`<br>- 예시: `/ticker_remove UPRO` |
-| `/ticker_list` | 등록된 티커 목록 | - 현재 프로필에 등록된 모든 티커 표시<br>- 활성 종목은 ✅로 표시<br>- 기초자산, 리버스 탈출, 트레일링 스탑 정보 포함 |
+| `/ticker_add` | 신규 티커 등록 | `/ticker_add UPRO SPY -18 1.2` (yfinance 실존 검증) |
+| `/ticker_remove` | 티커 프로필 삭제 | `/ticker_remove UPRO` |
+| `/ticker_list` | 등록된 티커 목록 | 기초자산, 리버스 탈출, 트레일링 스탑 정보 |
 
 ---
 
 ## 테스트
 
 ```bash
-# 전체 테스트 실행
+# 전체 테스트 실행 (291개)
 python -m pytest tests/ -v
 
 # 특정 모듈만
 python -m pytest tests/test_strategy.py -v
+python -m pytest tests/test_queue_ledger_core.py -v
 ```
 
 ---
 
 ## 문서
 
-- [KST 타임존 영구 고정 가이드](docs/kst-timezone-fix.md) — 클라우드 서버 시간대 리셋 문제 해결
-- [트레이딩 시스템 사양서](docs/trading-system-spec.md) — 매매 로직 상세 명세
-- [VWAP 알고리즘 연구](docs/vwap-research.md) — 시장 미시구조 심층 분석
+- [KST 타임존 영구 고정 가이드](docs/kst-timezone-fix.md) -- 클라우드 서버 시간대 리셋 문제 해결
+- [트레이딩 시스템 사양서](docs/trading-system-spec.md) -- 매매 로직 상세 명세 (V26.02)
+- [VWAP 알고리즘 연구](docs/vwap-research.md) -- 시장 미시구조 심층 분석
+
+---
+
+## 관련 링크
+
+- [라오어 무한매수법 네이버 카페](https://cafe.naver.com/infinitebuying)
+- [한국투자증권 Open API](https://apiportal.koreainvestment.com/)
