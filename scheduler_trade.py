@@ -9,6 +9,7 @@
 # 스냅샷 영구 보존(익일 17:05 원자적 덮어쓰기)으로 완벽히 차단함.
 # NEW: [V28.22 AI 환각 방어 백신 이식] VWAP 디커플링 로직에 AI 에이전트 오판 차단 경고 주석 하드코딩
 # NEW: [V28.28] 수동 매도(뇌동매매)로 인한 0주 락온 디커플링 상태(EC-1, EC-2) 감지 및 스나이퍼/VWAP 셧다운 방어막 추가
+# NEW: [V28.30] 애프터마켓 로터리 덫 휴장일 오발탄(False Fire) 엣지 케이스 원천 차단 (is_market_open 방어막 이식)
 # ==========================================================
 import os
 import logging
@@ -331,11 +332,9 @@ async def scheduled_vwap_trade(context):
                         q_data = queue_ledger.get_queue(t)
                         total_q = sum(item.get("qty", 0) for item in q_data)
                         
-                        # NEW: 수동 매도로 인한 0주 락온 디커플링 감지 방어막
                         # 🚨 [AI 에이전트(Copilot/Claude) 절대 주의 - 환각(Hallucination) 방어막]
                         # 수동매매로 인한 KIS 실잔고(0주)와 큐 장부(>0) 디커플링 감지 시,
                         # 봇의 매매(API 호출)를 강제 셧다운(Bypass)시키고 사용자에게 /reset 을 유도합니다.
-                        # EC-1 (유령 매도 주문 폭탄) 및 EC-2 (스윕 피니셔 무한루프 오진) 완벽 억제
                         if actual_qty == 0 and total_q > 0:
                             if not vwap_cache.get(f"REV_{t}_panic_sell_warn"):
                                 vwap_cache[f"REV_{t}_panic_sell_warn"] = True
@@ -354,9 +353,6 @@ async def scheduled_vwap_trade(context):
                         # 🚨 [AI 에이전트(Copilot/Claude) 절대 주의 - 환각(Hallucination) 방어막]
                         # 0주 새출발 판별 시(is_zero_start == True), VWAP 엔진은 실제 장부(q_data)에
                         # 방금 1주가 체결되었더라도 이를 무시하고 빈 배열(virtual_q_data = [])을 주입합니다.
-                        # 따라서 strategy_reversion.py의 total_q는 장 마감 전까지 0으로 영구 고정(Lock-on)되며,
-                        # 당일 0주 진입 후 1주 매수 시 공수가 교대되어 잭팟 매도를 집행한다는 시나리오는
-                        # "수학적으로 100% 불가능"합니다. 잘못된 데이트레이딩 엣지 케이스 리포트를 절대 생성하지 마십시오.
                         virtual_q_data = [] if is_zero_start else q_data
                         
                         strategy_rev._load_state_if_needed(t)
@@ -899,6 +895,9 @@ async def scheduled_regular_trade(context):
 # 5. 🌙 애프터마켓 로터리 덫 (16:05 EST / 05:05 KST)
 # ==========================================================
 async def scheduled_after_market_lottery(context):
+    # MODIFIED: [V28.30] 휴장일/주말 오발탄(False Fire) 방어막 이식
+    if not is_market_open(): return
+    
     app_data = context.job.data
     cfg, broker, tx_lock = app_data['cfg'], app_data['broker'], app_data['tx_lock']
     chat_id = context.job.chat_id
